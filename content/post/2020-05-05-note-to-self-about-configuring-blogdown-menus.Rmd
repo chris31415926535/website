@@ -20,3 +20,16 @@ projects: []
 The list of menus is in this file:
 
 `config/_default/menus.toml`
+
+## And connecting GitHub
+
+RStudio wouldn't let me stage most of the blogdown files. So I had to do the following:
+
+`git add .`
+
+`git commit`
+
+`git push`
+
+And don't be afraid to delete `.git/index.lock` ...
+```
