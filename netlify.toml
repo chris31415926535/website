@@ -1,7 +1,7 @@
 [build]
   command = "hugo --gc --minify -b $URL --themesDir ../../"
-  base    = "exampleSite"
-  publish = "exampleSite/public"
+  base    = ""
+  publish = "/public"
 
 [build.environment]
   HUGO_THEME = "repo"
@@ -12,10 +12,10 @@
   HUGO_ENV = "production"
 
 [context.deploy-preview]
-  command = "hugo --gc --minify --buildFuture -b $DEPLOY_PRIME_URL --themesDir ../../"
+#  command = "hugo --gc --minify --buildFuture -b $DEPLOY_PRIME_URL --themesDir ../../"
 
 [context.branch-deploy]
-  command = "hugo --gc --minify -b $DEPLOY_PRIME_URL --themesDir ../../"
+#  command = "hugo --gc --minify -b $DEPLOY_PRIME_URL --themesDir ../../"
 
 [[headers]]
   for = "*.webmanifest"
