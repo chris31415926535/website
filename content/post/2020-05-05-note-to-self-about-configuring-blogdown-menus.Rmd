@@ -1,0 +1,22 @@
+---
+title: Note to self about configuring blogdown menus
+author: Christopher Belanger
+date: '2020-05-05'
+slug: note-to-self-about-configuring-blogdown-menus
+categories: []
+tags: []
+subtitle: ''
+summary: ''
+authors: []
+lastmod: '2020-05-05T10:05:31-04:00'
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: no
+projects: []
+---
+
+The list of menus is in this file:
+
+`config/_default/menus.toml`

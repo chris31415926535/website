@@ -1,0 +1,29 @@
+---
+title: this is a test
+author: Christopher Belanger
+date: '2020-05-05'
+slug: this-is-a-test
+categories: []
+tags: []
+subtitle: ''
+summary: ''
+authors: []
+lastmod: '2020-05-05T09:55:33-04:00'
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: no
+projects: []
+---
+
+Hi everybody, here's a test.
+
+```{r test, message=FALSE}
+library(tidyverse)
+mtcars %>%
+  ggplot(aes(x=hp,y=mpg, colour=as.factor(cyl))) +
+  geom_point()
+  
+
+```
