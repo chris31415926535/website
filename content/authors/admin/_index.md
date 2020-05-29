@@ -25,16 +25,13 @@ role: MBA Candidate
 social:
 - icon: envelope
   icon_pack: fas
-  link: '#contact'
-- icon: twitter
-  icon_pack: fab
-  link: https://twitter.com/
-- icon: google-scholar
-  icon_pack: ai
-  link: https://scholar.google.co.uk/
+  link: 'cbela092@uottawa.ca'
 - icon: github
   icon_pack: fab
   link: https://github.com/chris31415926535
+- icon: linkedin
+  icon_pack: linkedin
+  link: https://www.linkedin.com/in/christopherabelanger/
 superuser: true
 title: Christopher Belanger, PhD
 user_groups:
@@ -42,6 +39,6 @@ user_groups:
 - Visitors
 ---
 
-Christopher Belanger is a person at a place. His research interests include data-driven research at the intersection between private markets and public policy. He does some things.
+Christopher Belanger is a policy expert, researcher, and consultant who combines data-driven rigour with qualitative insights. His work and research interests include data science in support of the public good, qualitative investigations into consumers' and workers' experiences, and health policy with a focus on digital health and health-system governance.
 
-Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed neque elit, tristique placerat feugiat ac, facilisis vitae arcu. Proin eget egestas augue. Praesent ut sem nec arcu pellentesque aliquet. Duis dapibus diam vel metus tempus vulputate.
+ Chris has five years' experience in policy advisory roles with the Provincial and Federal governments, received his PhD from the University of Toronto in the Philosophy of Modern Physics, and is currently completing his MBA studies at the University of Ottawa.
