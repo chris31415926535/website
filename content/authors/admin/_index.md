@@ -22,8 +22,8 @@ organizations:
 - name: University of Ottawa
   url: ""
 role: MBA Candidate
-social:
 link: '#contact'
+social:
 - icon: envelope
   icon_pack: fas
   link: 'cbela092@uottawa.ca'
