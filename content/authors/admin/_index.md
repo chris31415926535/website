@@ -26,7 +26,7 @@ link: '#contact'
 social:
 - icon: envelope
   icon_pack: fas
-  link: 'cbela092@uottawa.ca'
+  link: 'mailto:cbela092@uottawa.ca'
 - icon: github
   icon_pack: fab
   link: https://github.com/chris31415926535
