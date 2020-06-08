@@ -23,6 +23,7 @@ organizations:
   url: ""
 role: MBA Candidate
 social:
+  link: '#contact'
 - icon: envelope
   icon_pack: fas
   link: 'cbela092@uottawa.ca'
