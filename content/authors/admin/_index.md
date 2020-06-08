@@ -25,19 +25,12 @@ role: MBA Candidate
 social:
 - icon: envelope
   icon_pack: fas
-<<<<<<< HEAD
   link: 'cbela092@uottawa.ca'
-=======
-  link: '#contact'
-- icon: twitter
-  icon_pack: fab
-  link: https://twitter.com/
->>>>>>> 9a3cd3308637335eab7fb91ed6715b1793b2d2bd
 - icon: github
   icon_pack: fab
   link: https://github.com/chris31415926535
 - icon: linkedin
-  icon_pack: linkedin
+  icon_pack: fab
   link: https://www.linkedin.com/in/christopherabelanger/
 superuser: true
 title: Christopher Belanger, PhD
