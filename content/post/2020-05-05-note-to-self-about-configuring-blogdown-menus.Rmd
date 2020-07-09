@@ -1,8 +1,8 @@
 ---
-title: Note to self about configuring blogdown menus
+title: Connecting GitHub to Netlify with the Academic Theme
 author: Christopher Belanger
 date: '2020-05-05'
-slug: note-to-self-about-configuring-blogdown-menus
+slug: connecting-github-to-netlify-with-the-academic-theme
 categories: []
 tags: []
 subtitle: ''
@@ -17,13 +17,11 @@ image:
 projects: []
 ---
 
-The list of menus is in this file:
+I'm making a quick post now to record some of the pain points I hit trying to get the initial version of this site up and running.
 
-`config/_default/menus.toml`
+## Connecting RStudio to GitHub
 
-## And connecting GitHub
-
-RStudio wouldn't let me stage most of the blogdown files. So I had to do the following:
+I'm making a note of this here because I _always_ have trouble getting RStudio to sync with GitHub initially, and then forget what the problem was when it's time for me to set up a new project. RStudio wouldn't let me stage most of the blogdown files. So I had to do the following:
 
 `git add .`
 
@@ -32,4 +30,47 @@ RStudio wouldn't let me stage most of the blogdown files. So I had to do the fol
 `git push`
 
 And don't be afraid to delete `.git/index.lock` ...
+
+## Connecting GitHub to Netlify
+
+After following the instructions (here)[https://bookdown.org/yihui/blogdown/netlify.html] I got this fun error that the internet does not know how to fix:
+
+```7:25:35 PM: Error: "/opt/build/repo/themes/hugo-academic/layouts/partials/functions/get_address.html:21:1": parse failed: template: partials/functions/get_address.html:21: function "return" not defined```
+
+The problem is that it wasn't finding ```netlify.toml```, which the Academic theme puts in a subdirectory where Netlify couldn't find it. And then once I moved it to the root directory, it contained additional parameters that made Netlify crash in a different way!
+
+The solution was to delete a bunch of problematic stuff from ```netlify.toml``` down to this minimum document and put it in the website's root folder:
+
 ```
+[build]
+  command = "hugo"
+  base    = ""
+  publish = "/public"
+
+[build.environment]
+  HUGO_VERSION = "0.68.3"
+  HUGO_ENABLEGITINFO = "true"
+
+[context.production.environment]
+  HUGO_ENV = "production"
+
+
+[[headers]]
+  for = "*.webmanifest"
+  [headers.values]
+    Content-Type = "application/manifest+json; charset=UTF-8"
+
+[[headers]]
+  for = "index.xml"
+  [headers.values]
+    Content-Type = "application/rss+xml"
+
+```
+
+_Then_ it compiled.
+
+## Removing extraneous menus
+
+The list of menus is in this file:
+
+`config/_default/menus.toml`

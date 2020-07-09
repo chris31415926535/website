@@ -4,15 +4,15 @@ authors:
 bio: My research interests include data science, marketing, and public policy, bridging the quantitative-qualitative divide.
 education:
   courses:
+  - course: Masters of Business Administration
+    institution: University of Ottawa
+    year: 2021 (Expected)
   - course: PhD in Philosophy of Modern Physics
     institution: University of Toronto
     year: 2014
   - course: BSc in Physics and Mathematics
     institution: University of Toronto
     year: 2007
-  - course: Masters of Business Administration
-    institution: University of Ottawa
-    year: 2021 (Expected)
 email: ""
 interests:
 - Data Science
