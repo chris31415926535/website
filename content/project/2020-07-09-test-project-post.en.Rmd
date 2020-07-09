@@ -19,7 +19,7 @@ url_video: ''
 slides: ''
 ---
 
-Here's a test post about a hypothetical project I did. 
+Here's a test post about a hypothetical project I did. I've done some others and I'll put stuff here as soon as I can.
 
 ```{r message=FALSE,echo=FALSE}
 library(tidyverse)
