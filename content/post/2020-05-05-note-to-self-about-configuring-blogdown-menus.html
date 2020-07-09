@@ -73,3 +73,10 @@ projects: []
 <p><code>git rm -r --cached public/**</code></p>
 <p><code>git commit -m "Removed files...."</code></p>
 </div>
+<div id="getting-google-analytics-to-work" class="section level2">
+<h2>Getting Google Analytics to work</h2>
+<p>Took a while, but the crux is that you put in your Google Analytics tracking ID and <em>do not</em> also put anything in about Google Tags.</p>
+<p>This file has the logic:
+<code>/themes/hugo-academic/layouts/partials/marketing/google_analytics.html</code></p>
+<p>So you can define either <code>GoogleAnalytics</code> in <code>config.toml</code>, or <code>google_analytics</code> in <code>params.toml</code>.</p>
+</div>

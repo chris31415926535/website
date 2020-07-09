@@ -85,3 +85,12 @@ If you want git to ignore html files, for example those in the "public" director
 
 `git commit -m "Removed files...."`
 
+## Getting Google Analytics to work
+
+Took a while, but the crux is that you put in your Google Analytics tracking ID and *do not* also put anything in about Google Tags.
+
+This file has the logic:
+`/themes/hugo-academic/layouts/partials/marketing/google_analytics.html`
+
+So you can define either `GoogleAnalytics` in `config.toml`, or `google_analytics` in `params.toml`.
+
