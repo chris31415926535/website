@@ -84,3 +84,10 @@ ignoreFiles = ["\\.ipynb$", ".ipynb_checkpoints$", "\\.Rmd$", "\\.Rmarkdown$", "
   icon = "linkedin"
   icon_pack = "fa"
   link = "//linkedin.com/in/christopherabelanger"
+  
+  
+  ############################
+## Marketing
+############################
+[marketing]
+  google_analytics = "UA-172120097-1"
