@@ -37,6 +37,8 @@ enableEmoji = true
 footnotereturnlinkcontents = "<sup>^</sup>"
 ignoreFiles = ["\\.ipynb$", ".ipynb_checkpoints$", "\\.Rmd$", "\\.Rmarkdown$", "_files$", "_cache$"]
 
+google_analytics = "UA-172120097-1"
+
 # Workaround Hugo publishing taxonomy URLs as plurals - consistently use singular across Academic.
 [permalinks]
   authors = "/author/:slug/"
@@ -85,9 +87,3 @@ ignoreFiles = ["\\.ipynb$", ".ipynb_checkpoints$", "\\.Rmd$", "\\.Rmarkdown$", "
   icon_pack = "fa"
   link = "//linkedin.com/in/christopherabelanger"
   
-  
-  ############################
-## Marketing
-############################
-
-google_analytics = "UA-172120097-1"
