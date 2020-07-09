@@ -74,3 +74,14 @@ _Then_ it compiled.
 The list of menus is in this file:
 
 `config/_default/menus.toml`
+
+## Also, about .gitignore..
+
+* https://stackoverflow.com/questions/36185456/gitignored-files-still-shown-in-rstudio
+
+If you want git to ignore html files, for example those in the "public" directory, after you update .gitignore you need to do the following to clear git's cache:
+
+`git rm -r --cached public/**`
+
+`git commit -m "Removed files...."`
+

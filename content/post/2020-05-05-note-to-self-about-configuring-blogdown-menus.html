@@ -64,3 +64,12 @@ projects: []
 <p>The list of menus is in this file:</p>
 <p><code>config/_default/menus.toml</code></p>
 </div>
+<div id="also-about-.gitignore.." class="section level2">
+<h2>Also, about .gitignore..</h2>
+<ul>
+<li><a href="https://stackoverflow.com/questions/36185456/gitignored-files-still-shown-in-rstudio" class="uri">https://stackoverflow.com/questions/36185456/gitignored-files-still-shown-in-rstudio</a></li>
+</ul>
+<p>If you want git to ignore html files, for example those in the “public” directory, after you update .gitignore you need to do the following to clear git’s cache:</p>
+<p><code>git rm -r --cached public/**</code></p>
+<p><code>git commit -m "Removed files...."</code></p>
+</div>
