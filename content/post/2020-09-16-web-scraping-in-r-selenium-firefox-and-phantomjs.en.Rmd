@@ -133,13 +133,10 @@ Note that *this will take forever* because, as I have stressed above and am mora
 
 For Science(TM) I ran the following script to record time time taken to click TRB 200 times. Something weird starts happening around 60 clicks (for those interested, [raw results are available here](/static/data/2020-09-16-newsroom_clicks.csv)), but if we break the data into groups of 10 clicks and plot the average time taken for each group we see a clear upward trend:
 
-
-```{r, message=FALSE, include=FALSE}
-click_times <- read_csv("../../static/data/2020-09-16-newsroom_clicks.csv")
-```
-
 ```{r, message=FALSE, echo=FALSE} 
- 
+
+click_times <- read_csv("../../static/data/2020-09-16-newsroom_clicks.csv")
+
 click_times %>%
   mutate(by10 = (click-1) %/% 10) %>%
   group_by(by10) %>%
