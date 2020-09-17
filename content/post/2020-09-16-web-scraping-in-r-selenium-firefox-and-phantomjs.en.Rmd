@@ -138,7 +138,7 @@ For Science(TM) I ran the following script to record time time taken to click TR
 click_times <- read_csv("../../static/data/2020-09-16-newsroom_clicks.csv")
 ```
 
-```{r, message=FALSE} 
+```{r, message=FALSE, echo=FALSE} 
  
 click_times %>%
   mutate(by10 = (click-1) %/% 10) %>%
