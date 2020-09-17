@@ -16,17 +16,17 @@ education:
 email: ""
 interests:
 - Data Science
-- Marketing Analytics
+- Qualitative Research
 - Public Policy
 organizations:
 - name: University of Ottawa
   url: ""
-role: MBA Candidate
+role: Data Scientist<br>Researcher<br>Policy Wonk
 link: '#contact'
 social:
 - icon: envelope
   icon_pack: fas
-  link: 'mailto:cbela092@uottawa.ca'
+  link: 'mailto:christopher.a.belanger@gmail.com'
 - icon: github
   icon_pack: fab
   link: https://github.com/chris31415926535
@@ -40,6 +40,6 @@ user_groups:
 - Visitors
 ---
 
-Christopher Belanger is a policy expert, researcher, and consultant who combines data-driven rigour with qualitative insights. His work and research interests include data science in support of the public good, qualitative investigations into consumers' and workers' experiences, and health policy with a focus on digital health and health-system governance.
+Christopher Belanger is a data scientist, researcher, and policy expert who combines data-driven rigour with qualitative insights. His work and research interests include data science in support of the public good, qualitative investigations into consumers' and workers' experiences, and health policy with a focus on digital health and health-system governance.
 
- Chris has five years' experience in policy advisory roles with the Provincial and Federal governments, received his PhD from the University of Toronto in the Philosophy of Modern Physics, and is currently completing his MBA studies at the University of Ottawa.
+Chris has five years' experience in policy advisory roles with the Provincial and Federal governments, received his PhD from the University of Toronto in the Philosophy of Modern Physics, and is currently completing his MBA studies at the University of Ottawa.
