@@ -80,20 +80,7 @@ button &lt;- rDC$findElement(using = &quot;css&quot;, value = &quot;.mb-5&quot;)
 for (i in 1:1000) button$clickElement()</code></pre>
 <p>Note that <em>this will take forever</em> because, as I have stressed above and am morally bound to continue to stress, the Ontario Newsroom is <em>dumb</em>. I let this loop run for a few hours in Firefox and it went through 416 clicks and loaded items back to January 18, 2019. I tried again using PhantomJS (as described below) and was able to click 556 times in about 4 hours before it just stopped working and I had to restart R.</p>
 <p>For Science(TM) I ran the following script to record time time taken to click TRB 200 times. Something weird starts happening around 60 clicks (for those interested, <a href="/static/data/2020-09-16-newsroom_clicks.csv">raw results are available here</a>), but if we break the data into groups of 10 clicks and plot the average time taken for each group we see a clear upward trend:</p>
-<pre class="r"><code>click_times %&gt;%
-  mutate(by10 = (click-1) %/% 10) %&gt;%
-  group_by(by10) %&gt;%
-  summarise(avg_delay = mean(delay)) %&gt;%
-  ggplot() +
-  geom_point(aes(x=by10*10, y=avg_delay)) +
-  labs(
-    title=&quot;Average Times Taken for First 200 clicks of TRB&quot;,
-    subtitle=&quot;Clicks Grouped by 10&quot;,
-    x=&quot;Click&quot;,
-    y=&quot;Time(s)&quot; 
-  ) +
-  theme_minimal()</code></pre>
-<p><img src="/post/2020-09-16-web-scraping-in-r-selenium-firefox-and-phantomjs.en_files/figure-html/unnamed-chunk-8-1.png" width="672" /></p>
+<p><img src="/post/2020-09-16-web-scraping-in-r-selenium-firefox-and-phantomjs.en_files/figure-html/unnamed-chunk-7-1.png" width="672" /></p>
 <p>I suspect but cannot prove that this is because the Ontario Newsroom is–say it with me–<em>dumb</em>, and browsers just aren’t built to manage dynamic webpages with many thousands of entries. The ontario Newsroom was made to look pretty, not to provide access to information.</p>
 <p>At any rate, now that we’ve clicked TRB we may as well look at the data we’ve collected. I wasn’t able to use css selectors for this, but the second-easiest way is just to find all the urls on the page and then focus on the ones we’re interested in. We’ll do this by searching xpath, which you can read a bit more about <a href="https://stackoverflow.com/questions/56576541/get-all-the-twitter-links-in-a-web-page-using-rselenium">here</a>. Once we have a set of <code>RSelenium</code> objects corresponding to the urls on the webpage, we’ll use a workmanlike for-loop to extract the urls as character vectors.</p>
 <pre class="r"><code># search for all urls on the page by xpath
