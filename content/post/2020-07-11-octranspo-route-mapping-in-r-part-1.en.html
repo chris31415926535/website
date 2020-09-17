@@ -17,7 +17,7 @@ image:
 projects: []
 math: true
 codefolding_show: hide
-codefolding_nobutton: true
+codefolding_nobutton: false
 ---
 
 <script src="/rmarkdown-libs/htmlwidgets/htmlwidgets.js"></script>
@@ -31,10 +31,7 @@ codefolding_nobutton: true
 <script src="/rmarkdown-libs/leaflet-binding/leaflet.js"></script>
 
 
-<div id="overview" class="section level2">
-<h2>Overview</h2>
 <p>In this post I’m going to explain how to start using R’s <code>tidytransit</code> package to plan trips on OCTranspo, Ottawa’s public transit system. OCTranspo makes a lot of its data available online, but they leave out a key file called <code>transfers.txt</code> that tells the system how you can move from one route to another. You need this file for trip planning, so the first step to planning trips is to generate our own <code>transfers.txt</code> using reasonable assumptions about how transit users can move between route stops on foot.</p>
-</div>
 <div id="gtfs-the-data-format" class="section level2">
 <h2>GTFS: The Data Format</h2>
 <p>OCTranspo publishes its route information in an open-source format called GTFS, which stands for the <a href="https://gtfs.org">General Transit Feed Specification</a>. <a href="https://gtfs.org/gtfs-background">GTFS has an interesting history</a>, but the short version is that Google Worked with transit operators to develop a standard machine-readable format for transit data so that it could be loaded into Google Maps. And <a href="https://www.transitwiki.org/TransitWiki/index.php?title=Publicly-accessible_public_transportation_data&amp;mobileaction=toggle_view_desktop#List_of_publicly-accessible_public_transportation_data_feeds:_static_data_in_the_GTFS_format">many transit agencies</a> have adopted the standard, so presumably a <a href="https://www.youtube.com/watch?v=xiTgrhEqw5A">Heritage Minute</a> is in production.</p>

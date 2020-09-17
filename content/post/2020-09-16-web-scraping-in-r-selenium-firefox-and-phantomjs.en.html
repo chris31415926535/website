@@ -15,36 +15,35 @@ image:
   focal_point: ''
   preview_only: no
 projects: []
+codefolding_show: hide
+codefolding_nobutton: true
 ---
 
 <script src="/rmarkdown-libs/kePrint/kePrint.js"></script>
 
 
-<div id="introduction" class="section level1">
-<h1>Introduction</h1>
 <p>This tutorial will show you how to scrape web pages in R using the packages <code>RSelenium</code> and <code>wdman</code>. We’ll cover both browser-enabled scraping using Firefox and “headless” scraping using PhantomJS. As a case study, we’re going to collect a set of press releases from the Government of Ontario and do a bit of pre-processing so we can do some natural language processing later.</p>
 <p>If you want to skip to the code to make this work, <a href="#completecode">it’s available here at the bottom of the post.</a></p>
 <p>If you want to download the dataset <a href="https://github.com/chris31415926535/ogreleases">it’s available on GitHub here</a>, or you can look at it right now by installing in R as follows:</p>
 <pre class="r"><code>devtools::install_github(&quot;chris31415926535/ogreleases&quot;)
 df &lt;- ogreleases::ogreleases_data</code></pre>
-</div>
-<div id="motivation-scraping-government-of-ontario-news-releases" class="section level1">
-<h1>Motivation: Scraping Government of Ontario News Releases</h1>
+<div id="motivation-scraping-government-of-ontario-news-releases" class="section level2">
+<h2>Motivation: Scraping Government of Ontario News Releases</h2>
 <p>I’ve been working through the excellent (and free!!) book <a href="https://smltar.com/">Supervised Machine Learning for Text Analysis in R</a> by
 Emil Hvitfeldt and Julia Silge, and wanted to try out some of their techniques on a new dataset. Since I’m interested in applying machine learning techniques to public policy questions, I decided to try my hand at createing a dataset of publicly available press releases issued by the Government of Ontario.</p>
 <p>But while Ontario’s press releases are <em>technically</em> available online, the <a href="https://news.ontario.ca/en/">Ontario Newsroom</a> is a Javascript-enabled nightmare that shows results 10 at a time in reverse chronological order each time you click a button. This is, and I cannot stress this enough, <em>dumb</em>: if you want to find a press release from last year, you will have to click the ridiculous button over 300 times. It’s like putting your entire library catalogue online but only showing users the last 10 books you happened to put on the shelves.</p>
 <p>Basic web-scraping techniques based on pure html or css won’t work here, and our only other option is to sit there clicking the ridiculous button for hours on end. Enter <code>RSelenium</code>!</p>
 </div>
-<div id="some-new-tools-selenium-rselenium-and-phantomjs" class="section level1">
-<h1>Some New Tools: Selenium, <code>RSelenium</code>, and PhantomJS</h1>
+<div id="some-new-tools-selenium-rselenium-and-phantomjs" class="section level2">
+<h2>Some New Tools: Selenium, <code>RSelenium</code>, and PhantomJS</h2>
 <p>For this tutorial we’ll need three new tools: Selenium, <code>RSelenium</code>, and PhantomJS.</p>
 <p><a href="https://www.selenium.dev/">Selenium’s developers</a> claim that <em>“Selenium automates browsers. That’s it!”</em>, and frankly it’s tough to improve on that summary. We’ll be using it for a very simple purpose: connecting to a browser instance, navigating it to the <a href="https://news.ontario.ca/en/">Ontario Newsroom</a>, and then having <em>our computer</em> click the ridiculous button 1,000 times to load 10,000 media releases. There’s just something aesthetically pleasing about using a complex technological workaround to solve a dumb UI problem!</p>
 <p><code>RSelenium</code> is an R package that does exactly what its name might suggest, and lets us interact with Selenium through R. You can download it through its <a href="https://cran.r-project.org/web/packages/RSelenium/">CRAN page</a>, or as usual through R’s package manager.</p>
 <p><a href="https://phantomjs.org/">PhantomJS</a> is a scriptable headless web browser. “Headless” here means that it doesn’t connect to any kind of graphical user interface–it just runs in the background, doing web stuff. Normally this is the exact opposite of what you want in a web browser (it’s no good knowing that your <em>computer</em> is looking at cat gifs if <em>you</em> can’t see them), but here it’s perfect since we just want to automate basic tasks and extract the results.</p>
 <p>With this knowledge, we’re ready to get started!</p>
 </div>
-<div id="part-1-installing-and-testing-stuff" class="section level1">
-<h1>Part 1: Installing and Testing Stuff</h1>
+<div id="part-1-installing-and-testing-stuff" class="section level2">
+<h2>Part 1: Installing and Testing Stuff</h2>
 <p>First we’ll make sure that we have and can load all the packages we need. I’m also loading the full <code>tidyverse</code> since we’ll use some of those functions later on for preprocessing our results.</p>
 <pre class="r"><code>install.packages(c(&quot;RSelenium&quot;, &quot;wdman&quot;, &quot;tidyverse&quot;))
 
@@ -52,8 +51,8 @@ library(tidyverse)
 library(RSelenium)
 library(wdman)</code></pre>
 </div>
-<div id="part-2-testing-with-firefox" class="section level1">
-<h1>Part 2: Testing with Firefox</h1>
+<div id="part-2-testing-with-firefox" class="section level2">
+<h2>Part 2: Testing with Firefox</h2>
 <p>Next we’ll set up <code>RSelenium</code> to automatically manage an instance of Firefox. I found it helpful to start this way because I could actually see what was happening. We’ll move on the PhantomJS once we’ve got this step working.</p>
 <p>First, we start a Selenium server and browser using the command <code>rsDriver()</code>. This function gives us a lot of options, but we’ll settle for specifying the port (4567, for aesthetic purposes) and browser (Firefox, because it was the first one I tried and it worked). Assuming it worked, <code>rsDriver()</code> returned a list named <code>rD</code> that contains a server and a client. We only care about the client, so we’ll extract it into another variable called <code>rDC</code> like so:</p>
 <pre class="r"><code># Start Selenium using Firefox on port 4567
@@ -275,8 +274,8 @@ TORONTO — The Ontario government launched a new voluntary interactive sc…
 </tbody>
 </table>
 </div>
-<div id="part-3-phantomjs" class="section level1">
-<h1>Part 3: PhantomJS</h1>
+<div id="part-3-phantomjs" class="section level2">
+<h2>Part 3: PhantomJS</h2>
 <p>It’s possible to do this entire process using PhantomJS, which is essentially a web browser without a GUI. This is terrible for watching dog videos, but it’s great for automating boring tasks when you don’t actually need to have a visible web browser open.</p>
 <p>The process for doing this in PhantomJS is nearly the same as for Firefox except you need to use the <code>wdman</code> package.,I’m only presenting the code here because I couldn’t find a working example anywhere else.</p>
 <pre class="r"><code># load the requisite library
@@ -297,13 +296,13 @@ rJS$open()
 # away to the races!</code></pre>
 <p>When I tried this it wasn’t noticeably faster than using Firefox and it actually crashed around 500 clicks, so there’s no clear benefit to using it here.</p>
 </div>
-<div id="summary" class="section level1">
-<h1>Summary</h1>
+<div id="summary" class="section level2">
+<h2>Summary</h2>
 <p>So what have we accomplished? It depends on how charitable you’re feeling. On the one hand, we learned how to scrape dynamic webpages using <code>RSelenium</code> and extracted machine-readable information about the Ontario Government’s press releases that can be used to practice natural-language processing techniques. On the other hand, we spent a few hours writing a computer program to <em>(drumroll)</em> press a button that shouldn’t have been there in the first place.</p>
 <p>The point, of course, is that this will let us do some fun natural-language processing using real data with some Made-in-Ontario public policy implications! But that’ll have to wait for a future post.</p>
 </div>
-<div id="completecode" class="section level1">
-<h1>Complete Code</h1>
+<div id="completecode" class="section level2">
+<h2>Complete Code</h2>
 <p>For web scraping using Firefox:</p>
 <pre class="r"><code>install.packages(c(&quot;RSelenium&quot;, &quot;wdman&quot;, &quot;tidyverse&quot;))
 

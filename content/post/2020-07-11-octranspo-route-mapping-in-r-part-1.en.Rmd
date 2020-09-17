@@ -17,10 +17,8 @@ image:
 projects: []
 math: true
 codefolding_show: hide
-codefolding_nobutton: true
+codefolding_nobutton: false
 ---
-
-## Overview
 
 In this post I'm going to explain how to start using R's `tidytransit` package to plan trips on OCTranspo, Ottawa's public transit system. OCTranspo makes a lot of its data available online, but they leave out a key file called  `transfers.txt` that tells the system how you can move from one route to another. You need this file for trip planning, so the first step to planning trips is to generate our own `transfers.txt` using reasonable assumptions about how transit users can move between route stops on foot.
 

@@ -15,6 +15,8 @@ image:
   focal_point: ''
   preview_only: no
 projects: []
+codefolding_show: hide
+codefolding_nobutton: true
 ---
 
 
@@ -30,8 +32,6 @@ knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 ```
 
-# Introduction
-
 This tutorial will show you how to scrape web pages in R using the packages `RSelenium` and `wdman`. We'll cover both browser-enabled scraping using Firefox and "headless" scraping using PhantomJS. As a case study, we're going to collect a set of press releases from the Government of Ontario and do a bit of pre-processing so we can do some natural language processing later.
 
 If you want to skip to the code to make this work, [it's available here at the bottom of the post.](#completecode)
@@ -43,7 +43,7 @@ devtools::install_github("chris31415926535/ogreleases")
 df <- ogreleases::ogreleases_data
 ```
 
-# Motivation: Scraping Government of Ontario News Releases
+## Motivation: Scraping Government of Ontario News Releases
 
 I've been working through the excellent (and free!!) book [Supervised Machine Learning for Text Analysis in R](https://smltar.com/) by 
 Emil Hvitfeldt and Julia Silge, and wanted to try out some of their techniques on a new dataset. Since I'm interested in applying machine learning techniques to public policy questions, I decided to try my hand at createing a dataset of publicly available press releases issued by the Government of Ontario. 
@@ -52,7 +52,7 @@ But while Ontario's press releases are *technically* available online, the [Onta
 
 Basic web-scraping techniques based on pure html or css won't work here, and our only other option is to sit there clicking the ridiculous button for hours on end. Enter `RSelenium`!
 
-# Some New Tools: Selenium, `RSelenium`, and PhantomJS
+## Some New Tools: Selenium, `RSelenium`, and PhantomJS
 
 For this tutorial we'll need three new tools: Selenium, `RSelenium`, and PhantomJS.
 
@@ -64,7 +64,7 @@ For this tutorial we'll need three new tools: Selenium, `RSelenium`, and Phantom
 
 With this knowledge, we're ready to get started!
 
-# Part 1: Installing and Testing Stuff
+## Part 1: Installing and Testing Stuff
 
 First we'll make sure that we have and can load all the packages we need. I'm also loading the full `tidyverse` since we'll use some of those functions later on for preprocessing our results.
 
@@ -77,7 +77,7 @@ library(wdman)
 
 ```
 
-# Part 2: Testing with Firefox
+## Part 2: Testing with Firefox
 
 Next we'll set up `RSelenium` to automatically manage an instance of Firefox. I found it helpful to start this way because I could actually see what was happening. We'll move on the PhantomJS once we've got this step working.
 
@@ -278,7 +278,7 @@ results %>%
 
 ```
 
-# Part 3: PhantomJS
+## Part 3: PhantomJS
 
 It's possible to do this entire process using PhantomJS, which is essentially a web browser without a GUI. This is terrible for watching dog videos, but it's great for automating boring tasks when you don't actually need to have a visible web browser open.
 
@@ -305,13 +305,13 @@ rJS$open()
 
 When I tried this it wasn't noticeably faster than using Firefox and it actually crashed around 500 clicks, so there's no clear benefit to using it here.
 
-# Summary
+## Summary
 
 So what have we accomplished? It depends on how charitable you're feeling. On the one hand, we learned how to scrape dynamic webpages using `RSelenium` and extracted machine-readable information about the Ontario Government's press releases that can be used to practice natural-language processing techniques. On the other hand, we spent a few hours writing a computer program to *(drumroll)* press a button that shouldn't have been there in the first place. 
 
 The point, of course, is that this will let us do some fun natural-language processing using real data with some Made-in-Ontario public policy implications! But that'll have to wait for a future post.
 
-# Complete Code {#completecode}
+## Complete Code {#completecode}
 
 For web scraping using Firefox:
 
