@@ -1,0 +1,465 @@
+---
+title: 'Web Scraping in R: Selenium, FireFox, and PhantomJS'
+author: ''
+date: '2020-09-16'
+slug: web-scraping-in-r-selenium-firefox-and-phantomjs
+categories: []
+tags: []
+subtitle: ''
+summary: ''
+authors: []
+lastmod: '2020-09-16T14:54:32-04:00'
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: no
+projects: []
+---
+
+<script src="/rmarkdown-libs/kePrint/kePrint.js"></script>
+
+
+<div id="introduction" class="section level1">
+<h1>Introduction</h1>
+<p>This tutorial will show you how to scrape web pages in R using the packages <code>RSelenium</code> and <code>wdman</code>. We’ll cover both browser-enabled scraping using Firefox and “headless” scraping using PhantomJS. As a case study, we’re going to collect a set of press releases from the Government of Ontario and do a bit of pre-processing so we can do some natural language processing later.</p>
+<p>If you want to skip to the code to make this work, <a href="#completecode">it’s available here at the bottom of the post.</a></p>
+<p>If you want to download the dataset <a href="https://github.com/chris31415926535/ogreleases">it’s available on GitHub here</a>, or you can look at it right now by installing in R as follows:</p>
+<pre class="r"><code>devtools::install_github(&quot;chris31415926535/ogreleases&quot;)
+df &lt;- ogreleases::ogreleases_data</code></pre>
+</div>
+<div id="motivation-scraping-government-of-ontario-news-releases" class="section level1">
+<h1>Motivation: Scraping Government of Ontario News Releases</h1>
+<p>I’ve been working through the excellent (and free!!) book <a href="https://smltar.com/">Supervised Machine Learning for Text Analysis in R</a> by
+Emil Hvitfeldt and Julia Silge, and wanted to try out some of their techniques on a new dataset. Since I’m interested in applying machine learning techniques to public policy questions, I decided to try my hand at createing a dataset of publicly available press releases issued by the Government of Ontario.</p>
+<p>But while Ontario’s press releases are <em>technically</em> available online, the <a href="https://news.ontario.ca/en/">Ontario Newsroom</a> is a Javascript-enabled nightmare that shows results 10 at a time in reverse chronological order each time you click a button. This is, and I cannot stress this enough, <em>dumb</em>: if you want to find a press release from last year, you will have to click the ridiculous button over 300 times. It’s like putting your entire library catalogue online but only showing users the last 10 books you happened to put on the shelves.</p>
+<p>Basic web-scraping techniques based on pure html or css won’t work here, and our only other option is to sit there clicking the ridiculous button for hours on end. Enter <code>RSelenium</code>!</p>
+</div>
+<div id="some-new-tools-selenium-rselenium-and-phantomjs" class="section level1">
+<h1>Some New Tools: Selenium, <code>RSelenium</code>, and PhantomJS</h1>
+<p>For this tutorial we’ll need three new tools: Selenium, <code>RSelenium</code>, and PhantomJS.</p>
+<p><a href="https://www.selenium.dev/">Selenium’s developers</a> claim that <em>“Selenium automates browsers. That’s it!”</em>, and frankly it’s tough to improve on that summary. We’ll be using it for a very simple purpose: connecting to a browser instance, navigating it to the <a href="https://news.ontario.ca/en/">Ontario Newsroom</a>, and then having <em>our computer</em> click the ridiculous button 1,000 times to load 10,000 media releases. There’s just something aesthetically pleasing about using a complex technological workaround to solve a dumb UI problem!</p>
+<p><code>RSelenium</code> is an R package that does exactly what its name might suggest, and lets us interact with Selenium through R. You can download it through its <a href="https://cran.r-project.org/web/packages/RSelenium/">CRAN page</a>, or as usual through R’s package manager.</p>
+<p><a href="https://phantomjs.org/">PhantomJS</a> is a scriptable headless web browser. “Headless” here means that it doesn’t connect to any kind of graphical user interface–it just runs in the background, doing web stuff. Normally this is the exact opposite of what you want in a web browser (it’s no good knowing that your <em>computer</em> is looking at cat gifs if <em>you</em> can’t see them), but here it’s perfect since we just want to automate basic tasks and extract the results.</p>
+<p>With this knowledge, we’re ready to get started!</p>
+</div>
+<div id="part-1-installing-and-testing-stuff" class="section level1">
+<h1>Part 1: Installing and Testing Stuff</h1>
+<p>First we’ll make sure that we have and can load all the packages we need. I’m also loading the full <code>tidyverse</code> since we’ll use some of those functions later on for preprocessing our results.</p>
+<pre class="r"><code>install.packages(c(&quot;RSelenium&quot;, &quot;wdman&quot;, &quot;tidyverse&quot;))
+
+library(tidyverse)
+library(RSelenium)
+library(wdman)</code></pre>
+</div>
+<div id="part-2-testing-with-firefox" class="section level1">
+<h1>Part 2: Testing with Firefox</h1>
+<p>Next we’ll set up <code>RSelenium</code> to automatically manage an instance of Firefox. I found it helpful to start this way because I could actually see what was happening. We’ll move on the PhantomJS once we’ve got this step working.</p>
+<p>First, we start a Selenium server and browser using the command <code>rsDriver()</code>. This function gives us a lot of options, but we’ll settle for specifying the port (4567, for aesthetic purposes) and browser (Firefox, because it was the first one I tried and it worked). Assuming it worked, <code>rsDriver()</code> returned a list named <code>rD</code> that contains a server and a client. We only care about the client, so we’ll extract it into another variable called <code>rDC</code> like so:</p>
+<pre class="r"><code># Start Selenium using Firefox on port 4567
+rD &lt;- rsDriver(browser = &quot;firefox&quot;, port = 4567L)
+
+# For convenience, get a variable pointing to the client
+rDC &lt;- rD$client</code></pre>
+<p>You should expect to see a bunch of information printed to the console, and then a new Firefox browser window should open up. If so, congrats! If not, consider the following:</p>
+<ul>
+<li>Make sure you have <a href="https://www.mozilla.org/en-CA/firefox/">Firefox installed</a>.</li>
+<li>Alternatively, you can try using another browser by setting, for example, <code>browser = "chrome"</code>.</li>
+<li>Otherwise, your answer may lie <a href="https://cran.r-project.org/web/packages/RSelenium/">somewhere in <code>RSelenium</code>’s documentation</a>. Good luck!</li>
+</ul>
+<p>Once you have <code>RSelenium</code> working and you’ve started a browser session, basic web browsing is pretty easy. This next command tells our Firefox browser to load the <a href="https://news.ontario.ca/en/">Ontario Newsroom</a>, and when you execute it you should see that page load in Firefox.</p>
+<pre class="r"><code># Navigate our RSelenium browser session to the Governmente of Ontario Newsroom
+rDC$navigate(&quot;https://news.ontario.ca/en/&quot;)</code></pre>
+<p>Success! But this is the point where we run into the Newsroom’s dumb design and the ridiculous button, since we can only see the 10 most-recent news releases. How can we tell <code>RSelenium</code> to click the ridiculous button? First we need to figure out how to identify it in the alphabet soup of html, css, and JS that makes up modern web design.</p>
+<p>Enter <code>SelectorGadget</code>, a point-and-click tool to help you extract specific bits of a webpage using css selectors. It’s very easy to use and <a href="https://cran.r-project.org/web/packages/rvest/vignettes/selectorgadget.html">the documentation is great</a>, so I’ll skip to the punchline that the ridiculous button is uniquely identified by the css selector “.mb-5”.</p>
+<p>So we can extract that button as follows, using <code>findElement()</code>:</p>
+<pre class="r"><code># find the button
+button &lt;- rDC$findElement(using = &quot;css&quot;, value = &quot;.mb-5&quot;)</code></pre>
+<p>Next, we will summon the full power of Selenium to… push TRB 1,000 times.</p>
+<pre class="r"><code># click the button 1000 times
+for (i in 1:1000) button$clickElement()</code></pre>
+<p>Note that <em>this will take forever</em> because, as I have stressed above and am morally bound to continue to stress, the Ontario Newsroom is <em>dumb</em>. I let this loop run for a few hours in Firefox and it went through 416 clicks and loaded items back to January 18, 2019. I tried again using PhantomJS (as described below) and was able to click 556 times in about 4 hours before it just stopped working and I had to restart R.</p>
+<p>For Science(TM) I ran the following script to record time time taken to click TRB 200 times. Something weird starts happening around 60 clicks (for those interested, <a href="/static/data/2020-09-16-newsroom_clicks.csv">raw results are available here</a>), but if we break the data into groups of 10 clicks and plot the average time taken for each group we see a clear upward trend:</p>
+<pre class="r"><code>click_times %&gt;%
+  mutate(by10 = (click-1) %/% 10) %&gt;%
+  group_by(by10) %&gt;%
+  summarise(avg_delay = mean(delay)) %&gt;%
+  ggplot() +
+  geom_point(aes(x=by10*10, y=avg_delay)) +
+  labs(
+    title=&quot;Average Times Taken for First 200 clicks of TRB&quot;,
+    subtitle=&quot;Clicks Grouped by 10&quot;,
+    x=&quot;Click&quot;,
+    y=&quot;Time(s)&quot; 
+  ) +
+  theme_minimal()</code></pre>
+<p><img src="/post/2020-09-16-web-scraping-in-r-selenium-firefox-and-phantomjs.en_files/figure-html/unnamed-chunk-8-1.png" width="672" /></p>
+<p>I suspect but cannot prove that this is because the Ontario Newsroom is–say it with me–<em>dumb</em>, and browsers just aren’t built to manage dynamic webpages with many thousands of entries. The ontario Newsroom was made to look pretty, not to provide access to information.</p>
+<p>At any rate, now that we’ve clicked TRB we may as well look at the data we’ve collected. I wasn’t able to use css selectors for this, but the second-easiest way is just to find all the urls on the page and then focus on the ones we’re interested in. We’ll do this by searching xpath, which you can read a bit more about <a href="https://stackoverflow.com/questions/56576541/get-all-the-twitter-links-in-a-web-page-using-rselenium">here</a>. Once we have a set of <code>RSelenium</code> objects corresponding to the urls on the webpage, we’ll use a workmanlike for-loop to extract the urls as character vectors.</p>
+<pre class="r"><code># search for all urls on the page by xpath
+links &lt;- rDC$findElements(using=&quot;xpath&quot;, value=&quot;//a[@href]&quot;)
+
+# set up a vector to contain our raw urls
+link_raw &lt;- vector(mode=&quot;character&quot;,length=length(links))
+
+# extract the raw urls
+for (i in 1:length(link_raw)){
+  link_raw[[i]] &lt;- links[[i]]$getElementAttribute(&quot;href&quot;)[[1]]
+}</code></pre>
+<p>Next we’ll put our results in a tibble. We know that the links we’re interested in all point to a page on <code>https://news.ontario.ca/en/</code>, contain a numeric identifier, and include the text “release”, so we’ll use a simple regular expression to filter out anything else.</p>
+<pre class="r"><code># filter for the links we&#39;re interested in
+link_tib &lt;- 
+  
+  link_raw %&gt;%
+  as_tibble() %&gt;%
+  filter(str_detect(value, &quot;news\\.ontario\\.ca/en&quot;),
+         str_detect(value, &quot;[:digit:]&quot;),
+         str_detect(value, &quot;release&quot;))</code></pre>
+<p>Here are the first five links from when I ran the code:</p>
+<table>
+<colgroup>
+<col width="100%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th align="left">URL</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left"><a href="https://news.ontario.ca/en/release/58385/ontario-launches-new-covid-19-screening-tool-to-help-protect-students-and-staff" class="uri">https://news.ontario.ca/en/release/58385/ontario-launches-new-covid-19-screening-tool-to-help-protect-students-and-staff</a></td>
+</tr>
+<tr class="even">
+<td align="left"><a href="https://news.ontario.ca/en/release/58380/province-ramps-up-production-of-ontario-made-ventilators" class="uri">https://news.ontario.ca/en/release/58380/province-ramps-up-production-of-ontario-made-ventilators</a></td>
+</tr>
+<tr class="odd">
+<td align="left"><a href="https://news.ontario.ca/en/release/58373/health-preparedness-and-rebuilding-the-economy-top-priorities-in-ontarios-fall-legislative-agenda" class="uri">https://news.ontario.ca/en/release/58373/health-preparedness-and-rebuilding-the-economy-top-priorities-in-ontarios-fall-legislative-agenda</a></td>
+</tr>
+<tr class="even">
+<td align="left"><a href="https://news.ontario.ca/en/release/58366/ontario-investing-in-hospital-upgrades-and-repairs" class="uri">https://news.ontario.ca/en/release/58366/ontario-investing-in-hospital-upgrades-and-repairs</a></td>
+</tr>
+<tr class="odd">
+<td align="left"><a href="https://news.ontario.ca/en/advisory/58389/premier-ford-to-make-an-announcement-at-queens-park-106" class="uri">https://news.ontario.ca/en/advisory/58389/premier-ford-to-make-an-announcement-at-queens-park-106</a></td>
+</tr>
+</tbody>
+</table>
+<p>This is what we’ve been waiting for! Now we can finally start scraping some web data!</p>
+<p>Scraping the web data is pretty easy in comparison to what we’ve done so far. For each link we tell <code>RSelenium</code> to load the page, we extract some relevant information using css selectors, and we put that information into a results tibble. This code chunk does all that using, again, a workmanlike for loop and some decidedly un-<code>tidy</code> indexing. But it works, and I’m a strong proponent of <a href="https://en.wikipedia.org/wiki/Perfect_is_the_enemy_of_good">third-best solutions that work</a>!</p>
+<pre class="r"><code># would you like updates to the console?
+verbose &lt;- TRUE
+
+# turn tibble into vector for working with it in a loop
+link_vec &lt;- link_tib %&gt;% unlist()
+
+# how many links we have
+len = length(link_vec)
+
+# set up our results tibble
+results &lt;- tibble(title = rep(NA_character_, len),
+                  subtitle = rep(NA_character_, len),
+                  date = rep(NA_character_, len),
+                  issuer = rep(NA_character_, len),
+                  plain_text = rep(NA_character_, len), 
+                  html_source = rep(NA_character_, len),
+                  url = rep(NA_character_, len))
+
+# another workmanlike loop.
+# we load each page, extract the information we want, and add it to our results.
+# we also do a lot of waiting around for pages to load to prevent system crashes.
+for (i in 1:len){
+  rDC$navigate(link_vec[[i]])
+  if (verbose) message(paste0(i,&quot; : &quot;,link_vec[[i]]))
+  
+  # sleep 2 seconds to let the browser load
+  Sys.sleep(2)
+
+  # if we&#39;re not finding the elements, keep sleeping: the browser isn&#39;t loaded yet
+  while (length(rDC$findElements(using = &quot;css&quot;, value = &quot;#release_intro .release_title_mobile&quot;)) == 0) Sys.sleep(2)
+  if (verbose) message (&quot;reading..&quot;)
+  
+  title &lt;- rDC$findElement(using = &quot;css&quot;, value = &quot;#release_intro .release_title_mobile&quot;)$getElementText()[[1]]
+  subtitle &lt;- rDC$findElement(using = &quot;css&quot;, value = &quot;.ontario-lead-statement&quot;)$getElementText()[[1]]
+  date &lt;- rDC$findElement(using = &quot;css&quot;, value = &quot;#release_intro strong&quot;)$getElementText()[[1]]
+  issuer &lt;-rDC$findElement(using = &quot;css&quot;, value = &quot;.mb-0+ .mb-0&quot;)$getElementText()[[1]]
+  plain_text &lt;- rDC$findElement(using = &quot;css&quot;, value = &quot;div+ .release_print_row .col-lg-8&quot;)$getElementText()[[1]]
+  html_source &lt;- rDC$findElement(using = &quot;css&quot;, value = &quot;div+ .release_print_row .col-lg-8&quot;)$getElementAttribute(&quot;innerHTML&quot;)[[1]]
+  
+  results[i,]$title &lt;- title
+  results[i,]$subtitle &lt;- subtitle
+  results[i,]$date &lt;- date
+  results[i,]$issuer &lt;- issuer
+  results[i,]$plain_text &lt;- plain_text
+  results[i,]$html_source &lt;- html_source
+  results[i,]$url &lt;- link_vec[[i]]
+}</code></pre>
+<p>We’ll do some minimal clean-up on the plaintext to remove the table of contents at the top of each release:</p>
+<pre class="r"><code># minimal data cleaning to remove table of contents from plain text
+results &lt;- results %&gt;%
+  mutate(plain_text = str_remove_all(plain_text, regex(&quot;Table of Contents(.*?)Related Topics\\n&quot;, dotall = TRUE)))</code></pre>
+<p>And that’s it! Here are the first five results from when I ran the code to prepare this blog post. We can see there’s still something strange going on with unicode, but that’s a problem for another day:</p>
+<table>
+<thead>
+<tr>
+<th style="text-align:left;">
+Issuer
+</th>
+<th style="text-align:left;">
+Date
+</th>
+<th style="text-align:left;">
+Title
+</th>
+<th style="text-align:left;">
+Plain Text
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;width: 12em; ">
+Office of the Premier
+</td>
+<td style="text-align:left;">
+September 16, 2020
+</td>
+<td style="text-align:left;">
+Ontario Launches New COVID-19 Screening Tool to Help Protect Students an…
+</td>
+<td style="text-align:left;">
+TORONTO — The Ontario government launched a new voluntary interactive sc…
+</td>
+</tr>
+<tr>
+<td style="text-align:left;width: 12em; ">
+Office of the Premier
+</td>
+<td style="text-align:left;">
+September 15, 2020
+</td>
+<td style="text-align:left;">
+Province Ramps Up Production of Ontario-Made Ventilators
+</td>
+<td style="text-align:left;">
+GUELPH &lt;U+2015&gt; The Ontario government is investing $2.5 million through the On…
+</td>
+</tr>
+<tr>
+<td style="text-align:left;width: 12em; ">
+Office of the Premier
+</td>
+<td style="text-align:left;">
+September 14, 2020
+</td>
+<td style="text-align:left;">
+Health Preparedness and Rebuilding the Economy Top Priorities in Ontario…
+</td>
+<td style="text-align:left;">
+TORONTO — The Ontario government is returning to the legislature today, …
+</td>
+</tr>
+<tr>
+<td style="text-align:left;width: 12em; ">
+Health
+</td>
+<td style="text-align:left;">
+September 14, 2020
+</td>
+<td style="text-align:left;">
+Ontario Investing in Hospital Upgrades and Repairs
+</td>
+<td style="text-align:left;">
+MISSISSAUGA — The Ontario government is investing $175 million this year…
+</td>
+</tr>
+<tr>
+<td style="text-align:left;width: 12em; ">
+Office of the Premier
+</td>
+<td style="text-align:left;">
+September 16, 2020
+</td>
+<td style="text-align:left;">
+Ontario Launches New COVID-19 Screening Tool to Help Protect Students an…
+</td>
+<td style="text-align:left;">
+TORONTO — The Ontario government launched a new voluntary interactive sc…
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div id="part-3-phantomjs" class="section level1">
+<h1>Part 3: PhantomJS</h1>
+<p>It’s possible to do this entire process using PhantomJS, which is essentially a web browser without a GUI. This is terrible for watching dog videos, but it’s great for automating boring tasks when you don’t actually need to have a visible web browser open.</p>
+<p>The process for doing this in PhantomJS is nearly the same as for Firefox except you need to use the <code>wdman</code> package.,I’m only presenting the code here because I couldn’t find a working example anywhere else.</p>
+<pre class="r"><code># load the requisite library
+library(wdman)
+
+# start phantomjs instance
+rPJS &lt;- wdman::phantomjs(port = 4680L)
+
+# is it alive?
+rPJS$process$is_alive()
+
+#connect selenium to it?
+rJS &lt;- RSelenium::remoteDriver(browserName=&quot;phantomjs&quot;, port=4680L)
+
+# open a browser
+rJS$open()
+
+# away to the races!</code></pre>
+<p>When I tried this it wasn’t noticeably faster than using Firefox and it actually crashed around 500 clicks, so there’s no clear benefit to using it here.</p>
+</div>
+<div id="summary" class="section level1">
+<h1>Summary</h1>
+<p>So what have we accomplished? It depends on how charitable you’re feeling. On the one hand, we learned how to scrape dynamic webpages using <code>RSelenium</code> and extracted machine-readable information about the Ontario Government’s press releases that can be used to practice natural-language processing techniques. On the other hand, we spent a few hours writing a computer program to <em>(drumroll)</em> press a button that shouldn’t have been there in the first place.</p>
+<p>The point, of course, is that this will let us do some fun natural-language processing using real data with some Made-in-Ontario public policy implications! But that’ll have to wait for a future post.</p>
+</div>
+<div id="completecode" class="section level1">
+<h1>Complete Code</h1>
+<p>For web scraping using Firefox:</p>
+<pre class="r"><code>install.packages(c(&quot;RSelenium&quot;, &quot;wdman&quot;, &quot;tidyverse&quot;))
+
+library(tidyverse)
+library(RSelenium)
+library(wdman)
+
+# Start Selenium using Firefox on port 4567
+rD &lt;- rsDriver(browser = &quot;firefox&quot;, port = 4567L)
+
+# For convenience, get a variable pointing to the client
+rDC &lt;- rD$client
+
+# Navigate our RSelenium browser session to the Governmente of Ontario Newsroom
+rDC$navigate(&quot;https://news.ontario.ca/en/&quot;)
+
+# find the button
+button &lt;- rDC$findElement(using = &quot;css&quot;, value = &quot;.mb-5&quot;)
+
+# click the button 200 times
+for (i in 1:200) button$clickElement()
+
+# search for all urls on the page by xpath
+links &lt;- rDC$findElements(using=&quot;xpath&quot;, value=&quot;//a[@href]&quot;)
+
+# set up a vector to contain our raw urls
+link_raw &lt;- vector(mode=&quot;character&quot;,length=length(links))
+
+# extract the raw urls
+for (i in 1:length(link_raw)){
+  link_raw[[i]] &lt;- links[[i]]$getElementAttribute(&quot;href&quot;)[[1]]
+}
+
+# filter for the links we&#39;re interested in
+link_tib &lt;- link_raw %&gt;%
+  as_tibble() %&gt;%
+  filter(str_detect(value, &quot;news\\.ontario\\.ca/en&quot;),
+         str_detect(value, &quot;[:digit:]&quot;),
+         str_detect(value, &quot;release&quot;))
+
+
+# would you like updates to the console?
+verbose &lt;- TRUE
+
+# turn tibble into vector for working with it in a loop
+link_vec &lt;- link_tib %&gt;% unlist()
+
+# how many links we have
+len = length(link_vec)
+
+# set up our results tibble
+results &lt;- tibble(title = rep(NA_character_, len),
+                  subtitle = rep(NA_character_, len),
+                  date = rep(NA_character_, len),
+                  issuer = rep(NA_character_, len),
+                  plain_text = rep(NA_character_, len), 
+                  html_source = rep(NA_character_, len),
+                  url = rep(NA_character_, len))
+
+# another workmanlike loop.
+# we load each page, extract the information we want, and add it to our results.
+# we also do a lot of waiting around for pages to load to prevent system crashes.
+for (i in 1:len){
+  rDC$navigate(link_vec[[i]])
+  if (verbose) message(paste0(i,&quot; : &quot;,link_vec[[i]]))
+  
+  # sleep 2 seconds to let the browser load
+  Sys.sleep(2)
+
+  # if we&#39;re not finding the elements, keep sleeping: the browser isn&#39;t loaded yet
+  while (length(rDC$findElements(using = &quot;css&quot;, value = &quot;#release_intro .release_title_mobile&quot;)) == 0) Sys.sleep(2)
+  if (verbose) message (&quot;reading..&quot;)
+  
+  title &lt;- rDC$findElement(using = &quot;css&quot;, value = &quot;#release_intro .release_title_mobile&quot;)$getElementText()[[1]]
+  subtitle &lt;- rDC$findElement(using = &quot;css&quot;, value = &quot;.ontario-lead-statement&quot;)$getElementText()[[1]]
+  date &lt;- rDC$findElement(using = &quot;css&quot;, value = &quot;#release_intro strong&quot;)$getElementText()[[1]]
+  issuer &lt;-rDC$findElement(using = &quot;css&quot;, value = &quot;.mb-0+ .mb-0&quot;)$getElementText()[[1]]
+  plain_text &lt;- rDC$findElement(using = &quot;css&quot;, value = &quot;div+ .release_print_row .col-lg-8&quot;)$getElementText()[[1]]
+  html_source &lt;- rDC$findElement(using = &quot;css&quot;, value = &quot;div+ .release_print_row .col-lg-8&quot;)$getElementAttribute(&quot;innerHTML&quot;)[[1]]
+  
+  results[i,]$title &lt;- title
+  results[i,]$subtitle &lt;- subtitle
+  results[i,]$date &lt;- date
+  results[i,]$issuer &lt;- issuer
+  results[i,]$plain_text &lt;- plain_text
+  results[i,]$html_source &lt;- html_source
+  results[i,]$url &lt;- link_vec[[i]]
+}
+
+# minimal data cleaning to remove table of contents from plain text
+results &lt;- results %&gt;%
+  mutate(plain_text = str_remove_all(plain_text, regex(&quot;Table of Contents(.*?)Related Topics\\n&quot;, dotall = TRUE)))</code></pre>
+<p>For web scraping using PhantomJS:</p>
+<pre class="r"><code># load the requisite library
+library(wdman)
+
+# start phantomjs instance
+rPJS &lt;- wdman::phantomjs(port = 4680L)
+
+# is it alive?
+rPJS$process$is_alive()
+
+#connect selenium to it?
+rJS &lt;- RSelenium::remoteDriver(browserName=&quot;phantomjs&quot;, port=4680L)
+
+# open a browser
+rJS$open()
+
+# then follow the code in the Firefox example</code></pre>
+<p>For benchmarking how long it takes to click TRB:</p>
+<pre class="r"><code># load the library tictoc, which we&#39;ll use to track how long each click takes
+library(tictoc)
+
+# set up a vector for our durations
+times &lt;- vector(mode=&quot;double&quot;, length=200L)
+
+# Navigate our RSelenium browser session to the Governmente of Ontario Newsroom
+rDC$navigate(&quot;https://news.ontario.ca/en/&quot;)
+
+# find the button
+button &lt;- rDC$findElement(using = &quot;css&quot;, value = &quot;.mb-5&quot;)
+
+# click 200 times and record how long each click takes
+for (i in 1:200){
+  tic()
+  button$clickElement()
+  q &lt;- toc()
+  times[[i]] &lt;- q$toc - q$tic
+}
+
+# put our vector into a tibble
+click_times &lt;- tibble(times = times) %&gt;%
+  rowid_to_column() %&gt;%
+  rename(click=rowid, delay=times)
+
+# make a plot
+click_times %&gt;%  
+  ggplot() +
+  geom_point(aes(x=click, y=delay)) +
+  labs(
+    title=&quot;Time taken for the first 200 clicks of TRB&quot;,
+    x=&quot;Click&quot;,
+    y=&quot;Time(s)&quot; 
+  ) +
+  theme_minimal()</code></pre>
+</div>

@@ -1,0 +1,150 @@
+---
+title: 'OCTranspo Route Mapping in R: Part 1'
+author: Christopher Belanger
+date: '2020-07-11'
+slug: octranspo-route-mapping-in-r-part-1
+categories: []
+tags: ['RStats', 'GTFS','OCTranspo','tidytransit' ]
+subtitle: ''
+summary: ''
+authors: []
+lastmod: '2020-07-11T13:42:32-04:00'
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: no
+projects: []
+math: true
+codefolding_show: hide
+codefolding_nobutton: true
+---
+
+<script src="/rmarkdown-libs/htmlwidgets/htmlwidgets.js"></script>
+<script src="/rmarkdown-libs/jquery/jquery.min.js"></script>
+<link href="/rmarkdown-libs/leaflet/leaflet.css" rel="stylesheet" />
+<script src="/rmarkdown-libs/leaflet/leaflet.js"></script>
+<link href="/rmarkdown-libs/leafletfix/leafletfix.css" rel="stylesheet" />
+<script src="/rmarkdown-libs/Proj4Leaflet/proj4-compressed.js"></script>
+<script src="/rmarkdown-libs/Proj4Leaflet/proj4leaflet.js"></script>
+<link href="/rmarkdown-libs/rstudio_leaflet/rstudio_leaflet.css" rel="stylesheet" />
+<script src="/rmarkdown-libs/leaflet-binding/leaflet.js"></script>
+
+
+<div id="overview" class="section level2">
+<h2>Overview</h2>
+<p>In this post I’m going to explain how to start using R’s <code>tidytransit</code> package to plan trips on OCTranspo, Ottawa’s public transit system. OCTranspo makes a lot of its data available online, but they leave out a key file called <code>transfers.txt</code> that tells the system how you can move from one route to another. You need this file for trip planning, so the first step to planning trips is to generate our own <code>transfers.txt</code> using reasonable assumptions about how transit users can move between route stops on foot.</p>
+</div>
+<div id="gtfs-the-data-format" class="section level2">
+<h2>GTFS: The Data Format</h2>
+<p>OCTranspo publishes its route information in an open-source format called GTFS, which stands for the <a href="https://gtfs.org">General Transit Feed Specification</a>. <a href="https://gtfs.org/gtfs-background">GTFS has an interesting history</a>, but the short version is that Google Worked with transit operators to develop a standard machine-readable format for transit data so that it could be loaded into Google Maps. And <a href="https://www.transitwiki.org/TransitWiki/index.php?title=Publicly-accessible_public_transportation_data&amp;mobileaction=toggle_view_desktop#List_of_publicly-accessible_public_transportation_data_feeds:_static_data_in_the_GTFS_format">many transit agencies</a> have adopted the standard, so presumably a <a href="https://www.youtube.com/watch?v=xiTgrhEqw5A">Heritage Minute</a> is in production.</p>
+</div>
+<div id="getting-the-data" class="section level2">
+<h2>Getting the Data</h2>
+<p>To OCTranspo’s credit, the data is very easy to get: <a href="https://www.octranspo.com/files/google_transit.zip">here’s a direct link</a>, and <a href="https://www.octranspo.com/en/plan-your-trip/travel-tools/developers/">here’s a link to OCTranspo’s page with documentation and terms of use</a>.</p>
+</div>
+<div id="the-case-of-the-missing-transfers.txt" class="section level2">
+<h2>The Case of the Missing <code>transfers.txt</code></h2>
+<p><a href="https://www.cbc.ca/news/canada/ottawa/ottawa-lrt-schedule-problems-1.5492363">As might be expected</a>, OCTranspo’s GTFS data has a problem: it ships without a file called <code>transfers.txt</code>, which–helpfully–tells <code>tidytransit</code> how passengers can move from one route to another. Without <code>transfers.txt</code>, our simulated riders are anchored to their bus sets, faces pressed against the glass as they watch other buses come and go, doomed to ride the 88 forever, like an extremely boring <a href="https://www.unibroue.com/en/our-beers/maudite/8">chasse-galerie</a>.</p>
+<p>The bad news is that the <a href="https://gtfs.org/reference/static#transferstxt">GTFS specifications</a> say that <code>transfers.txt</code> is optional, so OCTranspo isn’t required to provide it. Those same specs also blithely say that “GTFS-consuming applications interpolate transfers based on allowable time and stop proximity,” but unfortunately I haven’t found a way to do that within <code>tidytransit</code> itself. So we’ll have to do it ourselves.</p>
+</div>
+<div id="generating-our-own-transfers.txt" class="section level2">
+<h2>Generating Our Own <code>transfers.txt</code></h2>
+<p>I solved the problem in a time-honoured (i.e. effective) but workmanlike (i.e. neither fancy nor elegant) way: nested loops.</p>
+<ol style="list-style-type: decimal">
+<li>Load OCTranspo’s <code>google_transit.zip</code>.</li>
+<li>Choose a plausible distance <span class="math inline">\(D\)</span> people would be willing to walk between transfers.</li>
+<li>Choose a plausible minimum time <span class="math inline">\(t\)</span> it would take for people to make a transfer.</li>
+<li>For each transit stop, find any other stops within distance <span class="math inline">\(D\)</span> and mark a transfer between the two that takes time <span class="math inline">\(t\)</span>.</li>
+<li>Save the results in a file called <code>transfers.txt</code> that aligns with <a href="https://gtfs.org/reference/static#transferstxt">the GTFS specs</a>.</li>
+<li>Add your new <code>transfers.txt</code> to OCTranspo’s zip file. I tend to rename mine something like <code>google_transit_transfers.zip</code> to make it clear that it’s not OCTranspo’s original file</li>
+</ol>
+<p>That’s it. To use your new file, just add it to <code>google_transit.zip</code> and load it using <code>tidytransit::read_gtfs()</code>, and everything should just work.</p>
+<p>The code is below, but I’ll also save you the trouble: <a href="/transfers.txt">Here is an OCTranspo transfers.txt</a> generated using the code below on May 19, 2020, assuming you can transfer between all stops within 100m of each other and assuming all transfers take 5 minutes. <em>Note that this file will be stale once OCTranspo updates its routes, but you can use the code to generate a new version.</em></p>
+<pre class="r"><code># This is the code that generates a transfers.txt file from OCTranspo&#39;s data.
+# You need transfers.txt to do any route planning, since it tells the system how users
+# move from one bus/LRT to another. Here we said people can transfer to any stop within
+# 50m of another stop, since that seemed like a reasonable walking distance.
+
+# load the OCTranspo schedule data
+octranspo_schedule &lt;- read_gtfs(
+  &quot;data/google_transit.zip&quot;
+)
+
+### WE CAN MAKE A TRANSFERS.TXT TABLE FOR OURSELVES
+## THIS TOOK LIKE 2 HOURS TO RUN
+plausible_transfers &lt;- tibble()
+
+for (i in 1:nrow(octranspo_stops)){
+  print (paste(&quot;Stop&quot;, i, &quot;/&quot;, nrow(octranspo_stops)))
+  stop_id &lt;- octranspo_stops$stop_id[i]
+  stop_lat &lt;- octranspo_stops$stop_lat[i]
+  stop_lon &lt;- octranspo_stops$stop_lon[i]
+  for (j in 1:nrow(octranspo_stops)) {
+    max_distance = 50 # in meters
+    if ( i != j){ # make sure the stops aren&#39;t the same
+      dest_lon = octranspo_stops$stop_lon[j]
+      dest_lat = octranspo_stops$stop_lat[j]
+      # calculate distance using a function from the geosphere library
+      # https://www.rdocumentation.org/packages/geosphere/versions/1.5-10/topics/distm
+      # this is the proper way to do it
+      distance &lt;- distm(c(stop_lat, stop_lon), c(octranspo_stops$stop_lat[j], octranspo_stops$stop_lon[j]))
+      if (distance &lt; max_distance) {
+        transfer_tibble &lt;- tibble(from_stop_id = octranspo_stops$stop_id[i], to_stop_id = octranspo_stops$stop_id[j], transfer_type=2, min_transfer_time=300)
+      plausible_transfers &lt;- rbind(plausible_transfers, transfer_tibble)  
+      } # end if distance &lt; max_distance
+    }
+  } # end if j
+} # end if i
+
+write_csv(plausible_transfers, &quot;transfers.txt&quot;)</code></pre>
+</div>
+<div id="putting-it-together-a-tiny-tidytransit-demo" class="section level2">
+<h2>Putting it Together: A tiny tidytransit demo</h2>
+<p><a href="https://github.com/r-transit/tidytransit">tidytransit</a> is a fantastic R package that makes it easy to do a whole lot of public-transit planning and analysis. Here’s a simple demo using our brand-new <code>transfers.txt</code> to find all the stops reachable within 20 minutes from Sussex and Rideau Falls. (Click the “Code” button below the map to see how it’s done.)</p>
+<div id="htmlwidget-1" style="width:672px;height:480px;" class="leaflet html-widget"></div>
+<script type="application/json" data-for="htmlwidget-1">{"x":{"options":{"crs":{"crsClass":"L.CRS.EPSG3857","code":null,"proj4def":null,"projectedBounds":null,"options":{}}},"calls":[{"method":"addTiles","args":["//{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",null,null,{"minZoom":0,"maxZoom":18,"tileSize":256,"subdomains":"abc","errorTileUrl":"","tms":false,"noWrap":false,"zoomOffset":0,"zoomReverse":false,"opacity":1,"zIndex":1,"detectRetina":false,"attribution":"&copy; <a href=\"http://openstreetmap.org\">OpenStreetMap<\/a> contributors, <a href=\"http://creativecommons.org/licenses/by-sa/2.0/\">CC-BY-SA<\/a>"}]},{"method":"addMarkers","args":[[45.439879,45.437909,45.436025,45.433645,45.434193,45.43452,45.432571,45.43058,45.428949,45.427348,45.433468,45.4314,45.43193,45.43224,45.432575,45.425407,45.431764,45.430436,45.429473,45.427383,45.42744,45.424058,45.424127,45.423273,45.422326,45.421372,45.419401,45.427827,45.429357,45.428924,45.417979,45.424439,45.421159,45.43026,45.416721,45.422151,45.421361,45.421492,45.421542,45.421045,45.415037,45.430165,45.426933,45.422041,45.415293],[-75.695844,-75.69709,-75.698326,-75.698642,-75.697228,-75.69638,-75.694388,-75.692743,-75.691245,-75.690016,-75.69913,-75.698308,-75.696621,-75.695927,-75.695027,-75.689881,-75.691026,-75.691556,-75.691506,-75.689823,-75.689277,-75.689802,-75.689814,-75.695339,-75.696727,-75.698937,-75.700032,-75.687798,-75.684082,-75.685111,-75.698787,-75.69476,-75.695343,-75.681948,-75.697731,-75.699561,-75.698927,-75.698938,-75.698485,-75.699616,-75.696286,-75.687199,-75.684478,-75.694091,-75.696857],null,null,null,{"interactive":true,"draggable":false,"keyboard":true,"title":"","alt":"","zIndexOffset":0,"opacity":1,"riseOnHover":false,"riseOffset":250},null,null,null,null,["Stop Name: SUSSEX / RIDEAU FALLS<br/>\n                Travel Time (min): 0 <br/>\n                # of Transfers: 0","Stop Name: SUSSEX / AD. 100<br/>\n                Travel Time (min): 1 <br/>\n                # of Transfers: 0","Stop Name: SUSSEX / KING EDWARD<br/>\n                Travel Time (min): 2 <br/>\n                # of Transfers: 0","Stop Name: BOTELER / SUSSEX<br/>\n                Travel Time (min): 3 <br/>\n                # of Transfers: 0","Stop Name: BOTELER / GILBERT-PAQUETTE<br/>\n                Travel Time (min): 3 <br/>\n                # of Transfers: 0","Stop Name: BOTELER / DALHOUSIE<br/>\n                Travel Time (min): 3 <br/>\n                # of Transfers: 0","Stop Name: DALHOUSIE / BRUYÈRE<br/>\n                Travel Time (min): 4 <br/>\n                # of Transfers: 0","Stop Name: DALHOUSIE / ST PATRICK<br/>\n                Travel Time (min): 5 <br/>\n                # of Transfers: 0","Stop Name: DALHOUSIE / YORK<br/>\n                Travel Time (min): 5 <br/>\n                # of Transfers: 0","Stop Name: DALHOUSIE / RIDEAU (D)<br/>\n                Travel Time (min): 6 <br/>\n                # of Transfers: 0","Stop Name: SUSSEX / BOTELER<br/>\n                Travel Time (min): 8 <br/>\n                # of Transfers: 1","Stop Name: SUSSEX / BRUYÈRE<br/>\n                Travel Time (min): 8 <br/>\n                # of Transfers: 1","Stop Name: ELIZABETH BRUYÈRE HOSPITAL<br/>\n                Travel Time (min): 8 <br/>\n                # of Transfers: 1","Stop Name: BRUYÈRE / PARENT<br/>\n                Travel Time (min): 8 <br/>\n                # of Transfers: 1","Stop Name: BRUYÈRE / DALHOUSIE<br/>\n                Travel Time (min): 9 <br/>\n                # of Transfers: 1","Stop Name: DALY / NICHOLAS<br/>\n                Travel Time (min): 9 <br/>\n                # of Transfers: 0","Stop Name: ST PATRICK / CUMBERLAND<br/>\n                Travel Time (min): 10 <br/>\n                # of Transfers: 1","Stop Name: MURRAY / DALHOUSIE<br/>\n                Travel Time (min): 10 <br/>\n                # of Transfers: 1","Stop Name: DALHOUSIE / CLARENCE<br/>\n                Travel Time (min): 10 <br/>\n                # of Transfers: 1","Stop Name: DALHOUSIE / RIDEAU<br/>\n                Travel Time (min): 11 <br/>\n                # of Transfers: 1","Stop Name: RIDEAU / DALHOUSIE<br/>\n                Travel Time (min): 11 <br/>\n                # of Transfers: 1","Stop Name: MACKENZIE KING 1A<br/>\n                Travel Time (min): 11 <br/>\n                # of Transfers: 1","Stop Name: MACKENZIE KING 2A<br/>\n                Travel Time (min): 11 <br/>\n                # of Transfers: 1","Stop Name: ELGIN / QUEEN<br/>\n                Travel Time (min): 13 <br/>\n                # of Transfers: 1","Stop Name: QUEEN / METCALFE<br/>\n                Travel Time (min): 14 <br/>\n                # of Transfers: 1","Stop Name: PARLIAMENT / PARLEMENT B<br/>\n                Travel Time (min): 14 <br/>\n                # of Transfers: 1","Stop Name: BANK / SLATER<br/>\n                Travel Time (min): 16 <br/>\n                # of Transfers: 1","Stop Name: RIDEAU / CUMBERLAND<br/>\n                Travel Time (min): 16 <br/>\n                # of Transfers: 1","Stop Name: RIDEAU / NELSON<br/>\n                Travel Time (min): 17 <br/>\n                # of Transfers: 1","Stop Name: RIDEAU / KING EDWARD<br/>\n                Travel Time (min): 17 <br/>\n                # of Transfers: 1","Stop Name: BANK / GLOUCESTER<br/>\n                Travel Time (min): 17 <br/>\n                # of Transfers: 1","Stop Name: ELGIN / WELLINGTON<br/>\n                Travel Time (min): 18 <br/>\n                # of Transfers: 2","Stop Name: SLATER / METCALFE<br/>\n                Travel Time (min): 18 <br/>\n                # of Transfers: 2","Stop Name: RIDEAU / FRIEL<br/>\n                Travel Time (min): 18 <br/>\n                # of Transfers: 1","Stop Name: BANK / LISGAR<br/>\n                Travel Time (min): 18 <br/>\n                # of Transfers: 1","Stop Name: O'CONNOR / SPARKS<br/>\n                Travel Time (min): 19 <br/>\n                # of Transfers: 2","Stop Name: PARLIAMENT / PARLEMENT A<br/>\n                Travel Time (min): 19 <br/>\n                # of Transfers: 2","Stop Name: PARLIAMENT / PARLEMENT C<br/>\n                Travel Time (min): 19 <br/>\n                # of Transfers: 2","Stop Name: PARLIAMENT / PARLEMENT O-TRAIN WEST / OUEST<br/>\n                Travel Time (min): 19 <br/>\n                # of Transfers: 2","Stop Name: PARLIAMENT / PARLEMENT O-TRAIN EAST / EST<br/>\n                Travel Time (min): 19 <br/>\n                # of Transfers: 2","Stop Name: BANK / SOMERSET W<br/>\n                Travel Time (min): 19 <br/>\n                # of Transfers: 1","Stop Name: KING EDWARD / YORK<br/>\n                Travel Time (min): 21 <br/>\n                # of Transfers: 2","Stop Name: KING EDWARD / STEWART<br/>\n                Travel Time (min): 22 <br/>\n                # of Transfers: 2","Stop Name: ELGIN / SLATER<br/>\n                Travel Time (min): 24 <br/>\n                # of Transfers: 2","Stop Name: SOMERSET W / BANK<br/>\n                Travel Time (min): 24 <br/>\n                # of Transfers: 2"],{"interactive":false,"permanent":false,"direction":"auto","opacity":1,"offset":[0,0],"textsize":"10px","textOnly":false,"className":"","sticky":true},null]}],"limits":{"lat":[45.415037,45.439879],"lng":[-75.700032,-75.681948]}},"evals":[],"jsHooks":[]}</script>
+<pre class="r"><code>library(tidyverse)
+library(tidytransit)
+library(leaflet)
+library(htmltools)
+octranspo &lt;- tidytransit::read_gtfs(&quot;google_transit_transfers.zip&quot;)
+
+## Choose your trip day, start time, and length
+trip_date &lt;- &quot;2020-05-23&quot;     # April 15 is a Wednesday
+trip_start_time &lt;- 11         # integer number of hours in 24-hour format
+trip_length &lt;- 20
+
+# this filters the stop times for the selected date and times
+stop_times &lt;- filter_stop_times(octranspo, trip_date, trip_start_time*3600, trip_start_time*3600+60*trip_length)
+
+# generate travel times from the first stop to all other stops on the network.
+first_stop &lt;- &quot;SUSSEX / RIDEAU FALLS&quot;
+try(tts &lt;- travel_times(stop_times, first_stop, return_coords = TRUE))
+
+# set up labels
+labs &lt;- paste0(&quot;Stop Name: &quot;,tts$to_stop_name,&quot;&lt;br/&gt;
+                Travel Time (min): &quot;,tts$travel_time/60 ,&quot; &lt;br/&gt;
+                # of Transfers: &quot;,tts$transfers)
+label_fun &lt;- function(x) lapply(labs, FUN = function(x) htmltools::HTML(x))
+
+# make a map
+tts %&gt;%
+  leaflet() %&gt;%
+  addTiles() %&gt;%
+  addMarkers(lng=tts$to_stop_lon,
+             lat=tts$to_stop_lat,
+             label = label_fun())</code></pre>
+</div>
+<div id="some-thoughts-on-optimizing" class="section level2">
+<h2>Some Thoughts on Optimizing</h2>
+<p>If I were doing this again, I’d look for a few ways to improve on the nested-loop algorithm. E.g.:</p>
+<ul>
+<li><strong>Take advantage of the symmetry:</strong> If A is within x metres of B, then B is also within x metres of A, so there’s no need to recompute.</li>
+<li><strong>Look at other functions:</strong> I suspect that <code>geosphere::distm()</code> is the bottleneck here when calculating the distance between each point. If I were doing this again I’d look at <code>sf::st_within()</code>, which I’ve since used in other contexts and it’s worked quite well.</li>
+</ul>
+</div>
+<div id="acknowledgements" class="section level2">
+<h2>Acknowledgements</h2>
+<p>This work was a small part of an MBA project I did for <a href="https://www.ottawafoodbank.ca/">the Ottawa Food Bank</a>, so I need to shout-out my great teammates <a href="https://www.linkedin.com/in/kaitlynrcarr/">Katie Carr</a> and <a href="https://www.linkedin.com/in/priyaankaarora/">Priyaanka Arora</a> and our intrepid prof <a href="https://www.linkedin.com/in/peter-rabinovitch-701a2b1/">Peter Rabinovitch</a>.</p>
+</div>
