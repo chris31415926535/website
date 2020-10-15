@@ -19,6 +19,8 @@ interests:
 - Qualitative Research
 - Public Policy
 organizations:
+- name: Ottawa Neighbourhood Study
+  url: "https://www.neighbourhoodstudy.ca/"
 - name: University of Ottawa
   url: ""
 role: Data Scientist<br>Researcher<br>Policy Wonk
