@@ -1,0 +1,353 @@
+---
+title: Two Ways to Count Points in Polygons with R
+author: 'Christopher Belanger'
+date: '2020-10-15'
+slug: two-ways-to-count-points-in-polygons-with-r
+categories: []
+tags: []
+subtitle: ''
+summary: ''
+authors: []
+lastmod: '2020-10-15T15:52:24-04:00'
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: no
+projects: []
+---
+
+
+
+<p>How many bikes were stolen in your neighbourhood last year? The City of Ottawa reports individual bike thefts <a href="https://open.ottawa.ca/datasets/3620cc7a3b874557bb288d889a4d56c2_0">here</a>, but it would be nice to have a fast way to aggregate those points into polygons so we can analyze and visualize them.</p>
+<p>The rest of this post will work through this data to do just like it says on the tin: if you’ve got a set of points, you’ve got a set of polygons, and you’re using R, we’ll see two ways to count how many points are in each polygon.</p>
+<div id="getting-the-data" class="section level2">
+<h2>Getting the Data</h2>
+<p>For this example we’ll use two spatial datasets from Ottawa’s <a href="https://open.ottawa.ca/">incredible collection of open data</a>. For our point data, we’ll use the set of <a href="https://open.ottawa.ca/datasets/3620cc7a3b874557bb288d889a4d56c2_0">bike thefts over the past several years</a>. For our polygon data, we’ll use <a href="https://open.ottawa.ca/datasets/32fe76b71c5e424fab19fec1f180ec18_0">the most recent boundaries from the Ottawa Neighbourhood Study (ONS)</a>. (And for more maps and data, also check out the <a href="https://www.neighbourhoodstudy.ca/">ONS’s website</a>!)</p>
+<p>Ottawa makes both of these datasets directly available in geojson format, so loading them is a snap using the <code>sf</code> package:</p>
+<pre class="r"><code># load bike theft data
+url &lt;- &quot;https://opendata.arcgis.com/datasets/3620cc7a3b874557bb288d889a4d56c2_0.geojson&quot;
+pts_online &lt;- sf::read_sf(url)
+
+# load ONS Gen2 shapefile
+url &lt;- &quot;https://opendata.arcgis.com/datasets/32fe76b71c5e424fab19fec1f180ec18_0.geojson&quot;
+ons_online &lt;- sf::read_sf(url)</code></pre>
+</div>
+<div id="a-brief-note-about-mutually-exclusive-collectively-exhaustive-sets" class="section level2">
+<h2>A Brief Note about Mutually Exclusive &amp; Collectively Exhaustive Sets</h2>
+<p>We’re assuming our polygon set is mutually exclusive and collectively exhaustive within our region of interest, which means that they cover all of it without overlapping.<a href="#fn1" class="footnote-ref" id="fnref1"><sup>1</sup></a> <a href="#fn2" class="footnote-ref" id="fnref2"><sup>2</sup></a> Fortunately, this is true for a lot of real-world spatial datasets like neighbourhoods, countries, or political ridings, so before using this code in your own projects just double-check that none of your own polygons overlap.<a href="#fn3" class="footnote-ref" id="fnref3"><sup>3</sup></a></p>
+</div>
+<div id="visualizing-the-data" class="section level2">
+<h2>Visualizing the Data</h2>
+<p>Visualizing your data is always a good first step, so here we’ll plot each theft on a map of Ottawa using a light transparency to see if bicycle thefts tend to cluster in certain areas. Not surprisingly, it looks like most thefts are concentrated in the more central regions, only a few thefts were reported in the Greenbelt (but more than none!), and there are pockets in Kanata, Barrhaven, and Orleans.</p>
+<pre class="r"><code>ggplot() +
+  geom_sf(data = ons_online,
+         fill = &quot;#e8f9fc&quot;) +
+  geom_sf(data = pts_online,
+          colour = &quot;#0074c8&quot;,
+          alpha = 0.2) +
+  theme_minimal() +
+  labs(title = &quot;Reported Bike Thefts in Ottawa, 2015-2020&quot;)</code></pre>
+<p><img src="/post/2020-10-15-two-ways-to-count-points-in-polygons-with-r.en_files/figure-html/first_look-1.png" width="672" /></p>
+<p>Since everything has loaded properly and looks sane, we can move on to the next step.</p>
+</div>
+<div id="method-1-points-first" class="section level2">
+<h2>Method 1: Points First</h2>
+<p>We’ll start with the most versatile approach, which is to take each point and find out which polygon it’s in. The main function we’ll use is <code>sf::st_join()</code>, which takes two <code>sf</code> objects as inputs and returns an <code>sf</code> object containing the spatial join of our inputs. In plain(ish) English, if we give it a set of points and a set of polygons, it will return our set of points <em>plus</em> new data columns corresponding to the neighbourhood each point is in. It just works!</p>
+<p>Let’s try it for our bike points and our neighbourhood polygons. Here we can see details for the first 10 reported thefts, each of which were in Old Barrhaven West.</p>
+<pre class="r"><code>sf::st_join(pts_online, ons_online) %&gt;%
+  sf::st_set_geometry(NULL) %&gt;%
+  select(ID, Incident_Date, Bicycle_Status, Name) %&gt;%
+  head(10) %&gt;%
+  knitr::kable(booktabs = TRUE,
+               col.names = c(&quot;ID&quot;, &quot;Incident Date&quot;, &quot;Bicycle Status&quot;, &quot;Neighbourhood&quot;))</code></pre>
+<table>
+<thead>
+<tr class="header">
+<th align="right">ID</th>
+<th align="left">Incident Date</th>
+<th align="left">Bicycle Status</th>
+<th align="left">Neighbourhood</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="right">1</td>
+<td align="left">08/02/2015 17:30</td>
+<td align="left">STOLEN</td>
+<td align="left">Old Barrhaven West</td>
+</tr>
+<tr class="even">
+<td align="right">2</td>
+<td align="left">8/23/15 9:00 PM</td>
+<td align="left">STOLEN</td>
+<td align="left">Old Barrhaven West</td>
+</tr>
+<tr class="odd">
+<td align="right">3</td>
+<td align="left">7/31/15 8:00 PM</td>
+<td align="left">STOLEN</td>
+<td align="left">Old Barrhaven West</td>
+</tr>
+<tr class="even">
+<td align="right">4</td>
+<td align="left">9/18/15 3:30 PM</td>
+<td align="left">RECOVERED</td>
+<td align="left">Old Barrhaven West</td>
+</tr>
+<tr class="odd">
+<td align="right">5</td>
+<td align="left">11/13/15 5:30 PM</td>
+<td align="left">STOLEN</td>
+<td align="left">Old Barrhaven West</td>
+</tr>
+<tr class="even">
+<td align="right">6</td>
+<td align="left">5/18/16 8:50 AM</td>
+<td align="left">STOLEN</td>
+<td align="left">Old Barrhaven West</td>
+</tr>
+<tr class="odd">
+<td align="right">7</td>
+<td align="left">6/28/16 9:00 AM</td>
+<td align="left">STOLEN</td>
+<td align="left">Old Barrhaven West</td>
+</tr>
+<tr class="even">
+<td align="right">8</td>
+<td align="left">05/07/2016 14:00</td>
+<td align="left">STOLEN</td>
+<td align="left">Old Barrhaven West</td>
+</tr>
+<tr class="odd">
+<td align="right">9</td>
+<td align="left">07/10/2016 20:27</td>
+<td align="left">RECOVERED</td>
+<td align="left">Old Barrhaven West</td>
+</tr>
+<tr class="even">
+<td align="right">10</td>
+<td align="left">7/31/16 1:45 PM</td>
+<td align="left">STOLEN</td>
+<td align="left">Old Barrhaven West</td>
+</tr>
+</tbody>
+</table>
+<p>This almost seems too easy, so to add some value here’s a function that wraps it in some minimal data validation:</p>
+<pre class="r"><code># function to get the neighbourhood each point is in
+get_pts_neighbourhood &lt;- function(pts, pgon){
+  # check input validity
+  if (!&quot;sf&quot; %in% class(pts)) stop(&quot;Invalid input: pts must have class &#39;sf&#39;, e.g. a shapefile loaded with sf::read_sf().&quot;)
+  if (!&quot;sf&quot; %in% class(pgon)) stop(&quot;Invalid input: pgon must have class &#39;sf&#39;, e.g. a shapefile loaded with sf::read_sf().&quot;)
+
+  # make sure the two datasets have the same CRS
+  if (sf::st_crs(pts) != sf::st_crs(pgon)) pts &lt;- sf::st_transform(pts, sf::st_crs(pgon))
+  
+  # do a spatial join
+  results &lt;- sf::st_join(pts, pgon)
+  
+  return (results)
+}</code></pre>
+<p>With this function in hand, counting the number of points is then just a matter of piping to <code>dplyr::summarise()</code> as follows:</p>
+<pre class="r"><code>get_pts_neighbourhood(pts_online, ons_online) %&gt;%
+  sf::st_set_geometry(NULL) %&gt;%
+  group_by(Name) %&gt;%
+  summarise(num = n()) %&gt;% 
+  arrange(desc(num)) %&gt;%
+  head(10)  %&gt;%
+  knitr::kable(booktabs = TRUE,
+               col.names = c(&quot;Neighbourhood&quot;, &quot;# Thefts&quot;))</code></pre>
+<table>
+<thead>
+<tr class="header">
+<th align="left">Neighbourhood</th>
+<th align="right"># Thefts</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">Centretown</td>
+<td align="right">1113</td>
+</tr>
+<tr class="even">
+<td align="left">Sandy Hill</td>
+<td align="right">710</td>
+</tr>
+<tr class="odd">
+<td align="left">Glebe - Dows Lake</td>
+<td align="right">324</td>
+</tr>
+<tr class="even">
+<td align="left">Byward Market</td>
+<td align="right">278</td>
+</tr>
+<tr class="odd">
+<td align="left">West Centretown</td>
+<td align="right">209</td>
+</tr>
+<tr class="even">
+<td align="left">Westboro</td>
+<td align="right">179</td>
+</tr>
+<tr class="odd">
+<td align="left">Carleton University</td>
+<td align="right">161</td>
+</tr>
+<tr class="even">
+<td align="left">Overbrook - McArthur</td>
+<td align="right">133</td>
+</tr>
+<tr class="odd">
+<td align="left">Hintonburg - Mechanicsville</td>
+<td align="right">132</td>
+</tr>
+<tr class="even">
+<td align="left">Laurentian</td>
+<td align="right">111</td>
+</tr>
+</tbody>
+</table>
+<p>We won’t delve into the data too much, but this looks plausible: the most thefts were reported in downtown areas with lots of bars, restaurants, and universities, just where we might expect there to be more bikes and more bike thefts.</p>
+</div>
+<div id="method-2-polygons-first" class="section level2">
+<h2>Method 2: Polygons First</h2>
+<p>The second way of counting is to jump straight to the polygons without locating each point. As a bonus, it’s more complicated <em>and</em> less versatile! You don’t get point-level data, but if you only care about aggregating points into polygons then that’s not a problem.</p>
+<p>The main function we’ll use is <code>sf::st_intersects()</code>, which takes two <code>sf</code> objects as inputs and returns a sparse geometry binary predicate (SGBP) list.</p>
+<pre class="r"><code>sf::st_intersects(ons_online, pts_online) </code></pre>
+<pre><code>## Sparse geometry binary predicate list of length 111, where the predicate was `intersects&#39;
+## first 10 elements:
+##  1: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, ...
+##  2: 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, ...
+##  3: 1513, 1514, 1515, 1516, 1517, 1518, 1519, 1520, 1521, 1522, ...
+##  4: 2966, 2967, 2968, 2969, 2970, 2971, 2972, 2973, 2974, 2975, ...
+##  5: 2246, 2247, 2248, 2249, 2250, 2251, 2252, 2253, 2254, 4104
+##  6: 4482, 4483, 4484, 4485, 4486, 4487, 4488, 4489, 4490, 4491, ...
+##  7: 4175, 4595, 4596, 4597, 4598, 4599, 4600, 4601, 4602
+##  8: 5351, 5354, 5360, 5557, 5558, 5560
+##  9: 5474, 5475, 5476, 5477, 5478, 5479, 5480, 5481, 5482, 5483, ...
+##  10: 5139, 5140, 5141, 5142, 5143, 5144, 5145, 5146, 5147, 5148, ...</code></pre>
+<p>We have one element of our SGBP list for each neighbourhood, and each list element holds the row indices of the points that are inside of it.To get the number of points in each polygon we need the number of indices in each list element, which we can get by piping our SGBP list into <code>lengths()</code>.</p>
+<pre class="r"><code>sf::st_intersects(ons_online, pts_online) %&gt;%
+  lengths() </code></pre>
+<p>With some piping, we can <code>mutate()</code> these numbers into a new column in our original polygon data. If we were to wrap it all up in a function with some basic validation, it might look like this:</p>
+<pre class="r"><code># function to count the number of points in each polygon.
+group_by_neighbourhood &lt;- function (pts, pgon) {
+  # check input validity
+  if (!&quot;sf&quot; %in% class(pts)) stop(&quot;Invalid input: pts must have class &#39;sf&#39;, e.g. a shapefile loaded with sf::read_sf().&quot;)
+  if (!&quot;sf&quot; %in% class(pgon)) stop(&quot;Invalid input: pgon must have class &#39;sf&#39;, e.g. a shapefile loaded with sf::read_sf().&quot;)
+
+  # make sure the two datasets have the same CRS
+  if (sf::st_crs(pts) != sf::st_crs(pgon)) pts &lt;- sf::st_transform(pts, sf::st_crs(pgon))
+  
+  # count the number of points in each polygon
+  results &lt;- pgon %&gt;%
+    mutate(num = sf::st_intersects(pgon, pts) %&gt;% lengths()) %&gt;%
+    select(-geometry, geometry)
+  
+  return (results)
+}</code></pre>
+<p>And we could test it like so:</p>
+<pre class="r"><code>group_by_neighbourhood(pts_online, ons_online) %&gt;%
+  sf::st_set_geometry(NULL) %&gt;%
+  select(Name, num) %&gt;%
+  arrange(desc(num)) %&gt;%
+  head(10)  %&gt;%
+  knitr::kable(booktabs = TRUE,
+               col.names = c(&quot;Neighbourhood&quot;, &quot;# Thefts&quot;))</code></pre>
+<table>
+<thead>
+<tr class="header">
+<th align="left">Neighbourhood</th>
+<th align="right"># Thefts</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">Centretown</td>
+<td align="right">1113</td>
+</tr>
+<tr class="even">
+<td align="left">Sandy Hill</td>
+<td align="right">710</td>
+</tr>
+<tr class="odd">
+<td align="left">Glebe - Dows Lake</td>
+<td align="right">324</td>
+</tr>
+<tr class="even">
+<td align="left">Byward Market</td>
+<td align="right">278</td>
+</tr>
+<tr class="odd">
+<td align="left">West Centretown</td>
+<td align="right">209</td>
+</tr>
+<tr class="even">
+<td align="left">Westboro</td>
+<td align="right">179</td>
+</tr>
+<tr class="odd">
+<td align="left">Carleton University</td>
+<td align="right">161</td>
+</tr>
+<tr class="even">
+<td align="left">Overbrook - McArthur</td>
+<td align="right">133</td>
+</tr>
+<tr class="odd">
+<td align="left">Hintonburg - Mechanicsville</td>
+<td align="right">132</td>
+</tr>
+<tr class="even">
+<td align="left">Laurentian</td>
+<td align="right">111</td>
+</tr>
+</tbody>
+</table>
+<p>This gives us the same results as Method #1, just using a few more function calls. (Although before finding <code>st_join()</code> I was using an even more convoluted method, so I’m not one to judge.)</p>
+</div>
+<div id="so-where-are-the-most-bicycle-thefts" class="section level2">
+<h2>So where <em>are</em> the most bicycle thefts?</h2>
+<p>It would be a shame to do this work without any visualizations! Here we’ll use our point-first approach and then some <code>dplyr</code> magic to count the number of thefts in each neighbourhood. Centretown is at the top of the list, but a few other downtown neighbourhoods also have strong showings. After that, thefts drop off exponentially and there’s a long tail of neighbourhoods (not shown here) with few or no thefts.</p>
+<pre class="r"><code>get_pts_neighbourhood(pts_online, ons_online) %&gt;%
+  sf::st_set_geometry(NULL) %&gt;%
+  group_by(Name) %&gt;%
+  summarise(num = n()) %&gt;% 
+  arrange(desc(num)) %&gt;%
+  head(10) %&gt;%
+  ggplot() +
+  geom_col(aes(x = reorder(Name, num), y=num),
+           fill = &quot;#0074c8&quot;) +
+  coord_flip() +
+  theme_minimal() +
+  labs(x = NULL,
+       y = NULL,
+       title = &quot;Bike Thefts in Ottawa: Top 10 Neighbourhoods&quot;,
+       subtitle = &quot;Total thefts reported 2015-2020&quot;)</code></pre>
+<p><img src="/post/2020-10-15-two-ways-to-count-points-in-polygons-with-r.en_files/figure-html/unnamed-chunk-3-1.png" width="672" /></p>
+<p>Since we have geospatial data, we can also use our polygon-first approach to see how it looks on a map if we shade each neighbourhood based on how many thefts it had. Again we can see the brightest spots right downtown, with some brighter patches for Kanata, Barrhaven, and Orleans, and dark patches in more rural neighbourhoods. Note that I’ve used a logarithmic scale here with <code>scale_fill_gradient()</code> (thanks to <a href="https://stackoverflow.com/questions/8069837/is-there-a-built-in-way-to-do-a-logarithmic-color-scale-in-ggplot2">this tip</a>) to make the detail more apparent.</p>
+<pre class="r"><code>group_by_neighbourhood(pts_online, ons_online) %&gt;%
+  ggplot() +
+  geom_sf(aes(fill = (num+1))) +
+  theme_minimal() +
+  labs(title = &quot;Bike Thefts in Ottawa by Neighbourhood&quot;,
+       subtitle = &quot;Total thefts reported 2015-2020&quot;,
+       fill = &quot;# of Thefts&quot;) +
+  scale_fill_gradient(trans = &quot;log&quot;,
+                      breaks = c(1, 10, 100, 1000, 1500), 
+                      labels = c(1, 10, 100, 1000, 1500))</code></pre>
+<p><img src="/post/2020-10-15-two-ways-to-count-points-in-polygons-with-r.en_files/figure-html/unnamed-chunk-4-1.png" width="672" /></p>
+</div>
+<div id="summary" class="section level2">
+<h2>Summary</h2>
+<p>We’ve used two methods to assign points to polygons: a versatile point-first approach using <code>sf::st_join()</code>, and a polygon-first approach using <code>sf::st_intersects()</code>. We developed some simple wrapper functions for basic data validation, and then applied these functions to some real-world data from the City of Ottawa.</p>
+<p>Was this useful/wrong/overly convoluted? Let me know your thoughts!</p>
+</div>
+<div class="footnotes">
+<hr />
+<ol>
+<li id="fn1"><p>To be precise, I’m assuming the polygons overlap only along their borders. But since this is a set of measure zero, we can assume such an event has probability zero and safely ignore it.<a href="#fnref1" class="footnote-back">↩︎</a></p></li>
+<li id="fn2"><p>And here I advance the following conjecture: when doing data science, the probability of an error arising <em>in theory</em> is inversely proportional to the probability of it arising <em>in practice</em>.<a href="#fnref2" class="footnote-back">↩︎</a></p></li>
+<li id="fn3"><p>You could imagine overlapping polygons being common in some disciplines, for example if you were mapping regions where various languages are spoken in the home.<a href="#fnref3" class="footnote-back">↩︎</a></p></li>
+</ol>
+</div>
