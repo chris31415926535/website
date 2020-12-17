@@ -1,0 +1,200 @@
+---
+title: 'Tidy Geocoding in R: Two New Functions'
+author: Christopher Belanger
+date: '2020-12-17'
+slug: tidy-geocoding-in-r-two-new-functions
+categories: []
+tags:
+  - geocoding
+  - onsr
+subtitle: ''
+summary: ''
+authors: []
+lastmod: '2020-12-17T15:24:23-05:00'
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: no
+projects: []
+codefolding_show: show
+---
+
+<link href="/rmarkdown-libs/anchor-sections/anchor-sections.css" rel="stylesheet" />
+<script src="/rmarkdown-libs/anchor-sections/anchor-sections.js"></script>
+<script src="/rmarkdown-libs/htmlwidgets/htmlwidgets.js"></script>
+<script src="/rmarkdown-libs/jquery/jquery.min.js"></script>
+<link href="/rmarkdown-libs/leaflet/leaflet.css" rel="stylesheet" />
+<script src="/rmarkdown-libs/leaflet/leaflet.js"></script>
+<link href="/rmarkdown-libs/leafletfix/leafletfix.css" rel="stylesheet" />
+<script src="/rmarkdown-libs/Proj4Leaflet/proj4-compressed.js"></script>
+<script src="/rmarkdown-libs/Proj4Leaflet/proj4leaflet.js"></script>
+<link href="/rmarkdown-libs/rstudio_leaflet/rstudio_leaflet.css" rel="stylesheet" />
+<script src="/rmarkdown-libs/leaflet-binding/leaflet.js"></script>
+
+
+<p>I’ve written two functions for tidy geocoding in R and I’d love to get feedback or bug reports. Here’s a summary of the two functions and their underlying services:</p>
+<table>
+<colgroup>
+<col width="20%" />
+<col width="17%" />
+<col width="8%" />
+<col width="12%" />
+<col width="11%" />
+<col width="15%" />
+<col width="17%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th align="left">Service Provider</th>
+<th align="left">Function Name</th>
+<th align="left">Package</th>
+<th align="left">Speed</th>
+<th align="left">Cost</th>
+<th align="left">API Key Req’d?</th>
+<th align="left">Geographic Scope</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">Google</td>
+<td align="left">geocode_gmap()</td>
+<td align="left">onsr</td>
+<td align="left">Pretty Fast</td>
+<td align="left">‘Freemium’</td>
+<td align="left">Yes</td>
+<td align="left">Worldwide</td>
+</tr>
+<tr class="even">
+<td align="left">ESRI/City of Ottawa</td>
+<td align="left">geocode_ottawa()</td>
+<td align="left">onsr</td>
+<td align="left">Very Fast</td>
+<td align="left">Free</td>
+<td align="left">No</td>
+<td align="left">Ottawa, ON</td>
+</tr>
+</tbody>
+</table>
+<p>You can install and test them as follows:</p>
+<pre class="r"><code>library(tidyverse)
+library(leaflet)
+
+# install.packages(&quot;devtools&quot;)
+devtools::install_github(&quot;Ottawa-Neighbourhood-Study/onsr&quot;)
+
+addresses &lt;- dplyr::tibble(address = c(&quot;24 Sussex Dr, Ottawa, ON K1M 1M4&quot;, 
+                                       &quot;55 Laurier Ave. E, Ottawa, ON K1N 6N6&quot;))
+
+addresses %&gt;%
+  onsr::geocode_ottawa(address) %&gt;%
+  leaflet() %&gt;%
+  addTiles() %&gt;%
+  addMarkers()</code></pre>
+<div id="htmlwidget-1" style="width:672px;height:480px;" class="leaflet html-widget"></div>
+<script type="application/json" data-for="htmlwidget-1">{"x":{"options":{"crs":{"crsClass":"L.CRS.EPSG3857","code":null,"proj4def":null,"projectedBounds":null,"options":{}}},"calls":[{"method":"addTiles","args":["//{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",null,null,{"minZoom":0,"maxZoom":18,"tileSize":256,"subdomains":"abc","errorTileUrl":"","tms":false,"noWrap":false,"zoomOffset":0,"zoomReverse":false,"opacity":1,"zIndex":1,"detectRetina":false,"attribution":"&copy; <a href=\"http://openstreetmap.org\">OpenStreetMap<\/a> contributors, <a href=\"http://creativecommons.org/licenses/by-sa/2.0/\">CC-BY-SA<\/a>"}]},{"method":"addMarkers","args":[[45.4442913550001,45.424084077],[-75.693665368,-75.687251488],null,null,null,{"interactive":true,"draggable":false,"keyboard":true,"title":"","alt":"","zIndexOffset":0,"opacity":1,"riseOnHover":false,"riseOffset":250},null,null,null,null,["24 Sussex Dr, Ottawa, ON K1M 1M4","55 Laurier Ave. E, Ottawa, ON K1N 6N6"],{"interactive":false,"permanent":false,"direction":"auto","opacity":1,"offset":[0,0],"textsize":"10px","textOnly":false,"className":"","sticky":true},null]}],"limits":{"lat":[45.424084077,45.4442913550001],"lng":[-75.693665368,-75.687251488]}},"evals":[],"jsHooks":[]}</script>
+<p>Both functions use a consistent syntax and are designed to fail gracefully in consistent ways (any un-geocodable addresses just get <code>NA</code>s and it proceeds apace), and both have a <code>verbose</code> parameter that gives (probably too much) information about what’s happening behind the scenes.</p>
+<p>If you find any bugs, please let me know in the comments or through an <a href="https://github.com/Ottawa-Neighbourhood-Study/onsr">issue on GitHub</a>!</p>
+<div id="slow-down-there-geo-what" class="section level3">
+<h3>Slow down there! Geo-<em>what?</em></h3>
+<p>Geocoding is the process of turning human-readable addresses into machine-readable coordinates. We can then use these coordinates for fun things like making maps, <a href="/post/octranspo-route-mapping-in-r-part-1/">analyzing distances or travel times</a>, or <a href="/post/two-ways-to-count-points-in-polygons-with-r/">aggregating points to regions for analysis</a>.</p>
+<p>So for example, we can use geocoding to turn the address “24 Sussex Drive” into the latitude/longitude values (45.44429, -75.69367), and then we can easily pinpoint it on a map like I’ve done in the example above.</p>
+<p>We do a lot of geospatial at the <a href="https://www.neighbourhoodstudy.ca/">Ottawa Neighbourhood Study</a> to crunch support local community and not-for-profit initiatives, so it was important for us to have a reliable and geocoding service. And I figured–why not build the interface myself?</p>
+</div>
+<div id="surely-theres-an-r-package-for-this-already" class="section level3">
+<h3>Surely there’s an R package for this already!</h3>
+<p>Yes, but it doesn’t currently support the services we wanted to use from Google Maps and ESRI, so I wrote my own. I’m looking into the work-effort to merge these functions with the excellent <strong><a href="https://github.com/jessecambon/tidygeocoder">tidygeocoder</a></strong> package.</p>
+<p>With that out of the way, let’s talk about these two new functions.</p>
+</div>
+<div id="function-1-geocode_gmap" class="section level3">
+<h3>Function 1: <code>geocode_gmap()</code></h3>
+<p>This function takes a tibble with a column of addresses as input, and returns that same tibble with two additional columns for latitudes and longitudes. It uses Google Map’s geocoding API, which means you’ll need to get an api key (<a href="https://cloud.google.com/free/">you can read about Google’s API keys here</a>).</p>
+<p>I’ve found Google’s service to be decently fast, accurate, and flexible, and at their “freemium” level you’re able to do at least a few thousand API calls per month for free.</p>
+<p>The function is straightforward to use:</p>
+<pre class="r"><code>#api_key &lt;- &quot;your_secret_api_key_that_shouldn&#39;t_be_shared :)&quot;
+
+addresses &lt;- dplyr::tibble(address = c(&quot;24 Sussex Dr, Ottawa, ON K1M 1M4&quot;, 
+                                       &quot;55 Laurier Ave. E, Ottawa, ON K1N 6N6&quot;,
+                                       &quot;1234567 Imaginary St., Ottawa, ON&quot;))
+
+geocoded_gmap &lt;- addresses %&gt;%
+  onsr::geocode_gmap(address, api_key = api_key) 
+
+geocoded_gmap %&gt;%
+  leaflet() %&gt;% addTiles() %&gt;% addMarkers(label = ~address)</code></pre>
+<div id="htmlwidget-2" style="width:672px;height:480px;" class="leaflet html-widget"></div>
+<script type="application/json" data-for="htmlwidget-2">{"x":{"options":{"crs":{"crsClass":"L.CRS.EPSG3857","code":null,"proj4def":null,"projectedBounds":null,"options":{}}},"calls":[{"method":"addTiles","args":["//{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",null,null,{"minZoom":0,"maxZoom":18,"tileSize":256,"subdomains":"abc","errorTileUrl":"","tms":false,"noWrap":false,"zoomOffset":0,"zoomReverse":false,"opacity":1,"zIndex":1,"detectRetina":false,"attribution":"&copy; <a href=\"http://openstreetmap.org\">OpenStreetMap<\/a> contributors, <a href=\"http://creativecommons.org/licenses/by-sa/2.0/\">CC-BY-SA<\/a>"}]},{"method":"addMarkers","args":[[45.4444101,45.4239424,45.4178545],[-75.6938779,-75.6872016,-75.6903697],null,null,null,{"interactive":true,"draggable":false,"keyboard":true,"title":"","alt":"","zIndexOffset":0,"opacity":1,"riseOnHover":false,"riseOffset":250},null,null,null,null,["24 Sussex Dr, Ottawa, ON K1M 1M4","55 Laurier Ave. E, Ottawa, ON K1N 6N6","1234567 Imaginary St., Ottawa, ON"],{"interactive":false,"permanent":false,"direction":"auto","opacity":1,"offset":[0,0],"textsize":"10px","textOnly":false,"className":"","sticky":true},null]}],"limits":{"lat":[45.4178545,45.4444101],"lng":[-75.6938779,-75.6872016]}},"evals":[],"jsHooks":[]}</script>
+<p>As you’ll see above, however, you need to watch out for invalid addresses: Google seems to often pin non-existent addresses to the closest result it can find, so here it’s matched “1234567 Imaginary St., Ottawa, ON” to the a location downtown.</p>
+<p>If you’re in a hurry, you can also use the non-tidy function <code>geocode_gmap_one()</code> to feed Google a single character vector:</p>
+<pre class="r"><code>onsr::geocode_gmap_one(&quot;24 Sussex Dr, Ottawa, ON, K1M 1M4&quot;, api_key = api_key) %&gt;%
+  knitr::kable(col.names = c(&quot;Latitude&quot;,&quot;Longitude&quot;))</code></pre>
+<table>
+<thead>
+<tr class="header">
+<th align="right">Latitude</th>
+<th align="right">Longitude</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="right">45.44441</td>
+<td align="right">-75.69388</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div id="function-2-geocode_ottawa" class="section level3">
+<h3>Function 2: <code>geocode_ottawa()</code></h3>
+<p>Did you know that the City of Ottawa offers a free geocoding service powered by ESRI? It’s great! There’s no API key required, the service supports batching, and it’s quite fast–I’ve done thousands of addresses in under a minute. For the technical details, you can read <a href="https://open.ottawa.ca/pages/developer-resources">the City of Ottawa’s developer resources</a> or <a href="https://developers.arcgis.com/rest/services-reference/geocode-addresses.htm">ESRI’s API documentation</a>.</p>
+<p>There are two downsides, however. First, it only seems to work for locations in the City of Ottawa–which is fair–and second, it can be a bit more persnickety with address formatting and un-geocodable addresses. For example, when we feed it “1234567 Imaginary St.” we get no answer, whereas Google would give us a guess.</p>
+<pre class="r"><code>addresses &lt;- dplyr::tibble(address = c(&quot;24 Sussex Dr, Ottawa, ON K1M 1M4&quot;, 
+                                       &quot;55 Laurier Ave. E, Ottawa, ON K1N 6N6&quot;,
+                                       &quot;1234567 Imaginary St., Ottawa, ON&quot;))
+
+geocoded_ottawa &lt;- addresses %&gt;%
+  onsr::geocode_ottawa(address) 
+
+geocoded_ottawa %&gt;%
+  knitr::kable(col.names = c(&quot;Address&quot;, &quot;Latitude&quot;, &quot;Longitude&quot;))</code></pre>
+<table>
+<thead>
+<tr class="header">
+<th align="left">Address</th>
+<th align="right">Latitude</th>
+<th align="right">Longitude</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">24 Sussex Dr, Ottawa, ON K1M 1M4</td>
+<td align="right">45.44429</td>
+<td align="right">-75.69367</td>
+</tr>
+<tr class="even">
+<td align="left">55 Laurier Ave. E, Ottawa, ON K1N 6N6</td>
+<td align="right">45.42408</td>
+<td align="right">-75.68725</td>
+</tr>
+<tr class="odd">
+<td align="left">1234567 Imaginary St., Ottawa, ON</td>
+<td align="right">NA</td>
+<td align="right">NA</td>
+</tr>
+</tbody>
+</table>
+<p>You can also set the batch size for each <code>POST</code> action <code>geocode_ottawa()</code> makes to ESRI/Ottawa’s servers, and you can adjust the delay between batches with the parameter <code>polite_pause</code>. which can make a big difference in speed if you have tons of addresses. I’ve had good luck using batch sizes of 500 or 1000 with delays of 1 to 2 seconds, but I’d be curious to hear how it works for others.</p>
+</div>
+<div id="a-sample-workflow" class="section level3">
+<h3>A Sample Workflow</h3>
+<p>To give you an idea how you might use both of these functions, we’re working on a project now where we need to geocode thousands of addresses with some regularity. Unfortunately the addresses are user-entered so there are quite a few inconsistencies and errors. Our current process is:</p>
+<ul>
+<li>Use a regex to remove any non-addresses (e.g. phone or fax numbers).</li>
+<li>Run all addresses through the Ottawa/ESRI fast but strict geocoder.</li>
+<li>Take any addresses that weren’t found and run those ones through Google’s slower but more permissive geocoder.</li>
+<li>Sanity check (e.g. make sure all locations are actually in Ottawa), and discard any remaining un-geocodable addresses.</li>
+</ul>
+</div>
+<div id="conclusion" class="section level3">
+<h3>Conclusion</h3>
+<p>In this post I’ve gone over the basics of geocoding, introduced two R functions that act as wrappers to geocoding services, and showed some example code and workflows. Let me know if you have any questions, and happy geocoding!</p>
+</div>

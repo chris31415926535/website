@@ -1,0 +1,160 @@
+---
+title: 'Tidy Geocoding in R: Two New Functions'
+author: Christopher Belanger
+date: '2020-12-17'
+slug: tidy-geocoding-in-r-two-new-functions
+categories: []
+tags:
+  - geocoding
+  - onsr
+subtitle: ''
+summary: ''
+authors: []
+lastmod: '2020-12-17T15:24:23-05:00'
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: no
+projects: []
+codefolding_show: show
+---
+
+ 
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+api_key <- readr::read_file("/Documents and Settings/chris/My Documents/Jobs/2020/Ottawa Neighbourhood Study/999. Often-used datafiles/chris_google_api/chris_google_api_key.csv")
+```
+
+I've written two functions for tidy geocoding in R and I'd love to get feedback or bug reports. Here's a summary of the two functions and their underlying services:
+
+```{r, echo=FALSE}
+
+sum_tbl <- tribble(
+  ~service_provider,      ~fn_name,           ~package, ~speed,        ~cost,          ~api_key_reqd, ~geographic_scope,
+  "Google",              "geocode_gmap()",   "onsr",    "Pretty Fast",  "'Freemium'"   ,"Yes",         "Worldwide",
+  "ESRI/City of Ottawa", "geocode_ottawa()", "onsr",    "Very Fast",    "Free",        "No",         "Ottawa, ON"
+)
+
+sum_tbl %>%
+  knitr::kable(booktabs = TRUE,
+               col.names = c("Service Provider", "Function Name", "Package", "Speed", "Cost", "API Key Req'd?", "Geographic Scope"))
+
+```
+
+You can install and test them as follows:
+
+```{r, eval=FALSE}
+library(tidyverse)
+library(leaflet)
+
+# install.packages("devtools")
+devtools::install_github("Ottawa-Neighbourhood-Study/onsr")
+
+addresses <- dplyr::tibble(address = c("24 Sussex Dr, Ottawa, ON K1M 1M4", 
+                                       "55 Laurier Ave. E, Ottawa, ON K1N 6N6"))
+
+addresses %>%
+  onsr::geocode_ottawa(address) %>%
+  leaflet() %>%
+  addTiles() %>%
+  addMarkers()
+```
+
+```{r, echo=FALSE, message=FALSE,warning=FALSE}
+library(tidyverse)
+library(leaflet)
+
+addresses <- dplyr::tibble(address = c("24 Sussex Dr, Ottawa, ON K1M 1M4", 
+                                       "55 Laurier Ave. E, Ottawa, ON K1N 6N6"))
+
+addresses %>%
+  onsr::geocode_ottawa(address) %>%
+  leaflet() %>%
+  addTiles() %>%
+  addMarkers(label = ~address)
+```
+
+Both functions use a consistent syntax and are designed to fail gracefully in consistent ways (any un-geocodable addresses just get `NA`s and it proceeds apace), and both have a `verbose` parameter that gives (probably too much) information about what's happening behind the scenes.
+
+If you find any bugs, please let me know in the comments or through an [issue on GitHub](https://github.com/Ottawa-Neighbourhood-Study/onsr)!
+
+### Slow down there! Geo-*what?*
+
+Geocoding is the process of turning human-readable addresses into machine-readable coordinates. We can then use these coordinates for fun things like making maps, [analyzing distances or travel times](/post/octranspo-route-mapping-in-r-part-1/), or [aggregating points to regions for analysis](/post/two-ways-to-count-points-in-polygons-with-r/).
+
+So for example, we can use geocoding to turn the address "24 Sussex Drive" into the latitude/longitude values (45.44429,	-75.69367), and then we can easily pinpoint it on a map like I've done in the example above.
+
+We do a lot of geospatial at the [Ottawa Neighbourhood Study](https://www.neighbourhoodstudy.ca/) to crunch support local community and not-for-profit initiatives, so it was important for us to have a reliable and geocoding service. And I figured--why not build the interface myself?
+
+### Surely there's an R package for this already!
+
+Yes, but it doesn't currently support the services we wanted to use from Google Maps and ESRI, so I wrote my own. I'm looking into the work-effort to merge these functions with the excellent **[tidygeocoder](https://github.com/jessecambon/tidygeocoder)** package.
+
+With that out of the way, let's talk about these two new functions.
+
+### Function 1: `geocode_gmap()`
+
+This function takes a tibble with a column of addresses as input, and returns that same tibble with two additional columns for latitudes and longitudes. It uses Google Map's geocoding API, which means you'll need to get an api key ([you can read about Google's API keys here](https://cloud.google.com/free/)).
+
+I've found Google's service to be decently fast, accurate, and flexible, and at their "freemium" level you're able to do at least a few thousand API calls per month for free. 
+
+The function is straightforward to use:
+
+```{r, message=FALSE, warning=FALSE}
+#api_key <- "your_secret_api_key_that_shouldn't_be_shared :)"
+
+addresses <- dplyr::tibble(address = c("24 Sussex Dr, Ottawa, ON K1M 1M4", 
+                                       "55 Laurier Ave. E, Ottawa, ON K1N 6N6",
+                                       "1234567 Imaginary St., Ottawa, ON"))
+
+geocoded_gmap <- addresses %>%
+  onsr::geocode_gmap(address, api_key = api_key) 
+
+geocoded_gmap %>%
+  leaflet() %>% addTiles() %>% addMarkers(label = ~address)
+```
+
+As you'll see above, however, you need to watch out for invalid addresses: Google seems to often pin non-existent addresses to the closest result it can find, so here it's matched "1234567 Imaginary St., Ottawa, ON" to the a location downtown.
+
+If you're in a hurry, you can also use the non-tidy function `geocode_gmap_one()` to feed Google a single character vector:
+
+```{r}
+onsr::geocode_gmap_one("24 Sussex Dr, Ottawa, ON, K1M 1M4", api_key = api_key) %>%
+  knitr::kable(col.names = c("Latitude","Longitude"))
+```
+
+### Function 2: `geocode_ottawa()`
+
+Did you know that the City of Ottawa offers a free geocoding service powered by ESRI? It's great! There's no API key required, the service supports batching, and it's quite fast--I've done thousands of addresses in under a minute. For the technical details, you can read [the City of Ottawa's developer resources](https://open.ottawa.ca/pages/developer-resources) or [ESRI's API documentation](https://developers.arcgis.com/rest/services-reference/geocode-addresses.htm).
+
+There are two downsides, however. First, it only seems to work for locations in the City of Ottawa--which is fair--and second, it can be a bit more persnickety with address formatting and un-geocodable addresses. For example, when we feed it "1234567 Imaginary St." we get no answer, whereas Google would give us a guess. 
+
+```{r, message=FALSE, warning=FALSE}
+
+addresses <- dplyr::tibble(address = c("24 Sussex Dr, Ottawa, ON K1M 1M4", 
+                                       "55 Laurier Ave. E, Ottawa, ON K1N 6N6",
+                                       "1234567 Imaginary St., Ottawa, ON"))
+
+geocoded_ottawa <- addresses %>%
+  onsr::geocode_ottawa(address) 
+
+geocoded_ottawa %>%
+  knitr::kable(col.names = c("Address", "Latitude", "Longitude"))
+```
+
+You can also set the batch size for each `POST` action `geocode_ottawa()` makes to ESRI/Ottawa's servers, and you can adjust the delay between batches with the parameter `polite_pause`. which can make a big difference in speed if you have tons of addresses. I've had good luck using batch sizes of 500 or 1000 with delays of 1 to 2 seconds, but I'd be curious to hear how it works for others.
+
+### A Sample Workflow
+
+To give you an idea how you might use both of these functions, we're working on a project now where we need to geocode thousands of addresses with some regularity. Unfortunately the addresses are user-entered so there are quite a few inconsistencies and errors. Our current process is:
+
+* Use a regex to remove any non-addresses (e.g. phone or fax numbers).
+* Run all addresses through the Ottawa/ESRI fast but strict geocoder.
+* Take any addresses that weren't found and run those ones through Google's slower but more permissive geocoder.
+* Sanity check (e.g. make sure all locations are actually in Ottawa), and discard any remaining un-geocodable addresses.
+
+### Conclusion
+
+In this post I've gone over the basics of geocoding, introduced two R functions that act as wrappers to geocoding services, and showed some example code and workflows. Let me know if you have any questions, and happy geocoding!
