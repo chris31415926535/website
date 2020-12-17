@@ -8,7 +8,7 @@ tags:
   - geocoding
   - onsr
 subtitle: ''
-summary: ''
+summary: "This post introduces two custom functions for geocoding in R: one using the City of Ottawa's free geocoding service, and one using Google's geocoding API. I provide instructions on how to install the functions, and some code examples and interactive maps."
 authors: []
 lastmod: '2020-12-17T15:24:23-05:00'
 featured: no
@@ -18,6 +18,9 @@ image:
   preview_only: no
 projects: []
 codefolding_show: show
+header:
+  image: "/headers/under-bridge-crop.jpg"
+  caption: "Rideau River Bike Path, looking north under Bronson Ave. Photo by Christopher Belanger (CC BY-SA 4.0)"
 ---
 
  
