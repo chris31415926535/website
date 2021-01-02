@@ -40,6 +40,9 @@ ignoreFiles = ["\\.ipynb$", ".ipynb_checkpoints$", "\\.Rmd$", "\\.Rmarkdown$", "
 google_analytics = "UA-172120097-1"
 GoogleAnalytics  = "UA-172120097-1"
 
+# trying to see if latex will work https://github.com/rstudio/blogdown/issues/36
+math = true
+
 # Workaround Hugo publishing taxonomy URLs as plurals - consistently use singular across Academic.
 [permalinks]
   authors = "/author/:slug/"

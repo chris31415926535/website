@@ -23,7 +23,7 @@ organizations:
   url: "https://www.neighbourhoodstudy.ca/"
 - name: University of Ottawa
   url: ""
-role: Data Scientist<br>Researcher<br>Policy Wonk
+role: Data Scientist<br>Researcher<br>Policy Expert
 link: '#contact'
 social:
 - icon: envelope
