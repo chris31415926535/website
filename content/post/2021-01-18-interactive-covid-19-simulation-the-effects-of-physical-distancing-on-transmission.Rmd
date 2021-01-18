@@ -26,11 +26,11 @@ header:
   caption: "There are no nice photos for COVID-19, so here's a sunrise instead. Photo by Christopher Belanger (CC BY-SA 4.0)"
 ---
 
-# Introduction
+## Introduction
 
 This interactive simulation lets you explore how different levels of physical distancing affect the transmission of COVID-19. Each month you choose the percentage of normal interactions people will have, ranging from 100% (business as usual) to 0% (no one interacts with *anyone*), then press the button to see what happens over the next 30 days. If you like, you can interpret your role as that of a policy-maker in February 2020 who must decide whether (and how much) to "lock down" society. 
 
-# The Simulation
+## The Simulation
  
 ```{r, out.width = "800px", out.height = "600px"}
 knitr::include_app(url = "https://chris31415926535.shinyapps.io/covid_seir/")
@@ -38,7 +38,14 @@ knitr::include_app(url = "https://chris31415926535.shinyapps.io/covid_seir/")
 
 If the simulation isn't working (which might happen if I hit my Shiiny usage limits), you can [grab the code on GitHub here](https://github.com/chris31415926535/covid_seir_shiny) and run it locally to your heart's content.
 
-# How does it work?
+## Take-Home Messages
+
+I got two big things out of this:
+
+* Interactions need to come down *a lot* for transmission rates to slow down: on this model, we need to eliminate roughly 40% of contacts to have an effect.
+* Consequently, *every interaction matters*! It's not an exaggeration to say that you can save lives by staying home.
+
+## How does it work?
 
 It's based on the epidemiological model developed by @anderson_estimating_2020 and presented in [this paper](https://www.medrxiv.org/content/10.1101/2020.04.17.20070086v1.full.pdf), which is used by the Public Health Agency of Canada in its [official reports](https://www.canada.ca/content/dam/phac-aspc/documents/services/diseases-maladies/coronavirus-disease-covid-19/epidemiological-economic-research-data/update-covid-19-canada-epidemiology-modelling-20210115-en.pdf) [@phac_update_2021, p. 9]. The authors have created **covidseir**, [a wonderful R package that you can download and install from GitHub!](https://github.com/seananderson/covidseir)
 
@@ -59,7 +66,7 @@ In brief, people start out $S$usceptible, then get $E_1$xposed, then after a whi
 
 At the same time, people can either start or stop physical distancing when they're in any of these states; the model assumes that there is some flow back and forth from distancing and not-distancing, but that in general more people start distancing than stop.
 
-# Cautionary notes about this simulation!
+## Cautionary notes about this simulation!
 
 * **Lots of things are missing** from this simulation: loss of life, long-term health effects of COVID-19, social unrest due to lockdowns *or* due to widespread sickness, the economic effects of lockdowns, the health effects of lockdowns, the *distributions* of those effects, which [tend to fall on already-disadvantaged communities](https://www.researchgate.net/publication/341245816_The_impact_of_the_COVID-19_pandemic_on_marginalized_populations_in_the_United_States_A_research_agenda) [@kantamneni_impact_2020] ... it would fascinating to build this into a fuller-fledged simulation, but right now this is just about physical distancing and disease transmission.
 * Policy changes in physical distancing happen right away: we assume society as a whole turns on a dime, responsive to your whim.
@@ -69,9 +76,9 @@ At the same time, people can either start or stop physical distancing when they'
 * **This is for edutainment purposes only** to learn about how physical distancing can affect COVID-19 prevalence on the population level.
   * It comes with no warranties, guarantees, or manatees!
 
-# For more robust COVID-19 simulations in R, check out **covidseir**
+## For more robust COVID-19 simulations in R, check out **covidseir**
   
 @anderson_seanandersoncovidseir_2021 have made the wonderful **covidseir** package available on GitHub [here](https://github.com/seananderson/covidseir). It's a much more sophisticated implementation that is able to work with real data to make predictions. The only downside is that it's not on CRAN, which is why I used a different package to solve the ODEs numerically in the Shiny app.
   
-# References
+## References
 
