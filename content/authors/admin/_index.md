@@ -42,6 +42,6 @@ user_groups:
 - Visitors
 ---
 
-Christopher Belanger is a data scientist, researcher, and policy expert who combines data-driven rigour with qualitative insights. His work and research interests include data science in support of the public good, qualitative investigations into consumers' and workers' experiences, and health policy with a focus on digital health and health-system governance.
+I'm a data scientist, researcher, and policy expert who combines data-driven rigour with qualitative insights. My work and research interests include data science in support of the public good, qualitative investigations into consumers' and workers' experiences, and health policy with a focus on digital health and health-system governance.
 
-Chris has five years' experience in policy advisory roles with the Provincial and Federal governments, received his PhD from the University of Toronto in the Philosophy of Modern Physics, and is currently completing his MBA studies at the University of Ottawa.
+I have five years' experience in policy advisory roles with the Province of Ontario and the Government of Canada, I received my PhD from the University of Toronto in the Philosophy of Modern Physics, and I'm currently completing MBA studies at the University of Ottawa, doing data science with the [Ottawa Neighbourhood Study](neighbourhoodstudy.ca), and wrangling a rambunctious toddler (not in that order).

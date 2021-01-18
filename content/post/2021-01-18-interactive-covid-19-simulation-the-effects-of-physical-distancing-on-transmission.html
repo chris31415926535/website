@@ -1,0 +1,96 @@
+---
+title: 'Interactive COVID-19 Simulation: The Effects of Physical Distancing on Transmission'
+author: Christopher Belanger
+date: '2021-01-18'
+slug: interactive-covid-19-simulation-the-effects-of-physical-distancing-on-transmission
+categories: []
+tags:
+  - shiny
+  - covid-19
+  - differential equations
+  - simulations
+subtitle: ''
+summary: 'This interactive simulation lets you explore how different levels of physical distancing affect the transmission of COVID-19.'
+authors: []
+lastmod: '2021-01-18T13:23:12-05:00'
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: no
+projects: []
+math: true
+bibliography: "../../static/references/2021-01-18.bib"
+header:
+  image: "/headers/2021-10-18-sunrise-sky.jpg"
+  caption: "There are no nice photos for COVID-19, so here's a sunrise instead. Photo by Christopher Belanger (CC BY-SA 4.0)"
+---
+
+
+
+<div id="introduction" class="section level1">
+<h1>Introduction</h1>
+<p>This interactive simulation lets you explore how different levels of physical distancing affect the transmission of COVID-19. Each month you choose the percentage of normal interactions people will have, ranging from 100% (business as usual) to 0% (no one interacts with <em>anyone</em>), then press the button to see what happens over the next 30 days. If you like, you can interpret your role as that of a policy-maker in February 2020 who must decide whether (and how much) to “lock down” society.</p>
+</div>
+<div id="the-simulation" class="section level1">
+<h1>The Simulation</h1>
+<pre class="r"><code>knitr::include_app(url = &quot;https://chris31415926535.shinyapps.io/covid_seir/&quot;)</code></pre>
+<iframe src="https://chris31415926535.shinyapps.io/covid_seir/?showcase=0" width="800px" height="400px">
+</iframe>
+<p>If the simulation isn’t working (which might happen if I hit my Shiiny usage limits), you can <a href="https://github.com/chris31415926535/covid_seir_shiny">grab the code on GitHub here</a> and run it locally to your heart’s content.</p>
+</div>
+<div id="how-does-it-work" class="section level1">
+<h1>How does it work?</h1>
+<p>It’s based on the epidemiological model developed by <span class="citation">Anderson et al. (<a href="#ref-anderson_estimating_2020" role="doc-biblioref">2020</a>)</span> and presented in <a href="https://www.medrxiv.org/content/10.1101/2020.04.17.20070086v1.full.pdf">this paper</a>, which is used by the Public Health Agency of Canada in its <a href="https://www.canada.ca/content/dam/phac-aspc/documents/services/diseases-maladies/coronavirus-disease-covid-19/epidemiological-economic-research-data/update-covid-19-canada-epidemiology-modelling-20210115-en.pdf">official reports</a> <span class="citation">(PHAC <a href="#ref-phac_update_2021" role="doc-biblioref">2021</a>, 9)</span>. The authors have created <strong>covidseir</strong>, <a href="https://github.com/seananderson/covidseir">a wonderful R package that you can download and install from GitHub!</a></p>
+<p>The model is a variant of <a href="https://en.wikipedia.org/wiki/Compartmental_models_in_epidemiology#The_SEIR_model">the epidemiological SEIR model</a> of how diseases spread. Please see <a href="https://www.medrxiv.org/content/10.1101/2020.04.17.20070086v1.full.pdf">the paper</a> for details, but at a high level it tracks how people move through six states over time:</p>
+<ul>
+<li><span class="math inline">\(S\)</span> : Susceptible to the virus;</li>
+<li><span class="math inline">\(E_1\)</span> : Exposed to the virus;</li>
+<li><span class="math inline">\(E_2\)</span> : Exposed, pre-symptomatic, and able to infect others;</li>
+<li><span class="math inline">\(I\)</span> : Symptomatic and able to infect others;</li>
+<li><span class="math inline">\(Q\)</span> : quarantined; and</li>
+<li><span class="math inline">\(R\)</span> Recovered or deceased.</li>
+</ul>
+<p>There are also six variables for people practicing physical distancing: <span class="math inline">\(S_d\)</span>, <span class="math inline">\(E_{1d}\)</span>, <span class="math inline">\(E_{2d}\)</span>, <span class="math inline">\(I_d\)</span>, <span class="math inline">\(Q_d\)</span>, and <span class="math inline">\(R_d\)</span>. People are assumed to be immune once they enter state <span class="math inline">\(R\)</span>.</p>
+<p>The model describes how these groups change over time with differential equations. I won’t repeat them here (you’re welcome), but I <em>will</em> <a href="https://www.medrxiv.org/content/10.1101/2020.04.17.20070086v1.full.pdf">link to the paper one more time so you can see them yourselves on pages 6 and 7!</a></p>
+<p>In brief, people start out <span class="math inline">\(S\)</span>usceptible, then get <span class="math inline">\(E_1\)</span>xposed, then after a while they are both <span class="math inline">\(E_2\)</span>xposed and able to infect others, then they become visibly <span class="math inline">\(I\)</span>nfected and symptomatic, then either go straight to <span class="math inline">\(R\)</span>ecovery, or into <span class="math inline">\(Q\)</span>uarantine and then into <span class="math inline">\(R\)</span>ecovery.</p>
+<p>At the same time, people can either start or stop physical distancing when they’re in any of these states; the model assumes that there is some flow back and forth from distancing and not-distancing, but that in general more people start distancing than stop.</p>
+</div>
+<div id="cautionary-notes-about-this-simulation" class="section level1">
+<h1>Cautionary notes about this simulation!</h1>
+<ul>
+<li><strong>Lots of things are missing</strong> from this simulation: loss of life, long-term health effects of COVID-19, social unrest due to lockdowns <em>or</em> due to widespread sickness, the economic effects of lockdowns, the health effects of lockdowns, the <em>distributions</em> of those effects, which <a href="https://www.researchgate.net/publication/341245816_The_impact_of_the_COVID-19_pandemic_on_marginalized_populations_in_the_United_States_A_research_agenda">tend to fall on already-disadvantaged communities</a> <span class="citation">(Kantamneni <a href="#ref-kantamneni_impact_2020" role="doc-biblioref">2020</a>)</span> … it would fascinating to build this into a fuller-fledged simulation, but right now this is just about physical distancing and disease transmission.</li>
+<li>Policy changes in physical distancing happen right away: we assume society as a whole turns on a dime, responsive to your whim.</li>
+<li>The simulation uses Anderson et al.’s (2020) initial conditions, which represent British Columbia.</li>
+<li>The simulation solves the differential equations numerically (using the <strong>deSolve</strong> package) using a resolution of 0.1 days, and then keeps results for whole-numbered time-steps for plotting <span class="citation">(Soetaert et al. <a href="#ref-soetaert_desolve_2020" role="doc-biblioref">2020</a>)</span>.</li>
+<li><strong>I’m not an epidemiologist</strong> and am not affiliated with Anderson et al. in any way. I just like differential equations.</li>
+<li><strong>This is for edutainment purposes only</strong> to learn about how physical distancing can affect COVID-19 prevalence on the population level.
+<ul>
+<li>It comes with no warranties, guarantees, or manatees!</li>
+</ul></li>
+</ul>
+</div>
+<div id="for-more-robust-covid-19-simulations-in-r-check-out-covidseir" class="section level1">
+<h1>For more robust COVID-19 simulations in R, check out <strong>covidseir</strong></h1>
+<p><span class="citation">Anderson (<a href="#ref-anderson_seanandersoncovidseir_2021" role="doc-biblioref">2021</a>)</span> have made the wonderful <strong>covidseir</strong> package available on GitHub <a href="https://github.com/seananderson/covidseir">here</a>. It’s a much more sophisticated implementation that is able to work with real data to make predictions. The only downside is that it’s not on CRAN, which is why I used a different package to solve the ODEs numerically in the Shiny app.</p>
+</div>
+<div id="references" class="section level1 unnumbered">
+<h1>References</h1>
+<div id="refs" class="references">
+<div id="ref-anderson_seanandersoncovidseir_2021">
+<p>Anderson, Sean. 2021. “Seananderson/Covidseir.” <a href="https://github.com/seananderson/covidseir">https://github.com/seananderson/covidseir</a>.</p>
+</div>
+<div id="ref-anderson_estimating_2020">
+<p>Anderson, Sean C., Andrew M. Edwards, Madi Yerlanov, Nicola Mulberry, Jessica E. Stockdale, Sarafa A. Iyaniwura, Rebeca C. Falcao, et al. 2020. “Estimating the Impact of COVID-19 Control Measures Using a Bayesian Model of Physical Distancing.” Preprint. Epidemiology. <a href="https://doi.org/10.1101/2020.04.17.20070086">https://doi.org/10.1101/2020.04.17.20070086</a>.</p>
+</div>
+<div id="ref-kantamneni_impact_2020">
+<p>Kantamneni, Neeta. 2020. “The Impact of the COVID-19 Pandemic on Marginalized Populations in the United States: A Research Agenda.” <em>Journal of Vocational Behavior</em> 119 (May): 103439. <a href="https://doi.org/10.1016/j.jvb.2020.103439">https://doi.org/10.1016/j.jvb.2020.103439</a>.</p>
+</div>
+<div id="ref-phac_update_2021">
+<p>PHAC, Public Health Agency of Canada. 2021. “Update on COVID-19 in Canada: Epidemiology and Modelling.” Canada. <a href="https://www.canada.ca/content/dam/phac-aspc/documents/services/diseases-maladies/coronavirus-disease-covid-19/epidemiological-economic-research-data/update-covid-19-canada-epidemiology-modelling-20210115-en.pdf">https://www.canada.ca/content/dam/phac-aspc/documents/services/diseases-maladies/coronavirus-disease-covid-19/epidemiological-economic-research-data/update-covid-19-canada-epidemiology-modelling-20210115-en.pdf</a>.</p>
+</div>
+<div id="ref-soetaert_desolve_2020">
+<p>Soetaert, Karline, Thomas Petzoldt, R. Woodrow Setzer, Peter N. Brown, George D. Byrne, Ernst Hairer, Alan C. Hindmarsh, et al. 2020. “deSolve: Solvers for Initial Value Problems of Differential Equations (’ODE’, ’DAE’, ’DDE’).” <a href="https://CRAN.R-project.org/package=deSolve">https://CRAN.R-project.org/package=deSolve</a>.</p>
+</div>
+</div>
+</div>
