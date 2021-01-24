@@ -509,3 +509,24 @@ This is a quick and *relatively context-free* look at how Trump compares to othe
 But here we bump into the limits of this kind of surface-deep data-science analysis, and to go further we'd need to have a broader discussion that includes normative, historical, and political dimensions.
 
 For example, one might wonder how much sense it makes to have an executive pardon power not subject to legislative review or other accountability measures, whether these [lightning-strike acts of mercy](https://twitter.com/ddale8/status/1113891464096960512) are only a distraction from [serious structural problems](https://muse.jhu.edu/article/727800), or the question of the *quality* or appropriateness of specific Presidential pardons, [which](https://www.chicagotribune.com/sns-clinton-pardons-analysis-story.html)  [readers](https://www.theguardian.com/us-news/2019/dec/27/eddie-gallagher-trump-navy-seal-iraq)  [may](https://globalnews.ca/news/7308066/steve-bannon-fraud-trial-date/)  [judge](https://apnews.com/article/donald-trump-politics-iraq-baghdad-massacres-371cbf4b621ee8a08c307777c29abc14)  [for](https://www.bloomberg.com/news/articles/2020-02-18/trump-commutes-prison-sentence-of-blagojevich-pardons-kerik)  [themselves](https://www.npr.org/2019/05/16/723849097/trump-pardons-his-friend-conrad-black-who-wrote-glowing-trump-biography-last-yea). Data can certainly inform these discussions, but it can't tell us which discussions are important or which positions we should take.
+
+
+```{r}
+pardons_over_time %>%
+  ggplot(aes(x=reorder(president, -granted), y = granted, fill = 1)) +
+  geom_col() +
+  geom_text(size = 10, label = "?", nudge_y = 200) +
+  geom_text(label = tibble(text = "Presidential Pardons")$text, 
+            size = 10,
+            aes(x = 14, y = 3000)) +
+  labs(title = NULL,#title = "Pardons Granted by Each President",
+       x = NULL, #"President",
+       y = NULL,
+       fill = NULL) + 
+  theme_minimal() + 
+  theme(legend.position = "none") +
+  scale_x_discrete(labels = rep(NULL, nrow(pardons_over_time))) +
+  scale_colour_brewer()
+  
+```
+
