@@ -1,0 +1,511 @@
+---
+title: Pardon Me? Analyzing Trump's Presidential Pardons
+author: Christopher Belanger
+date: '2021-01-25'
+slug: pardon-me-analyzing-trump-s-presidential-pardons
+categories: []
+tags:
+  - nlp
+  - politics
+subtitle: ''
+summary: 'Presidential pardons have been all over the news this week, since Donald Trump issued a number of of them on his way out the door. But how does his use of the pardon power compare to that of past Presidents? The answer might surprise you!'
+authors: []
+lastmod: '2021-01-25T14:08:58-05:00'
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: no
+projects: []
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+
+```
+
+# Pardon Me? 
+
+Presidential pardons have been all over the news this week, since [Donald Trump issued a number of of them on his way out the door](https://www.cbc.ca/news/world/trump-pardons-bannon-1.5878675). This got me wondering--how does Trump's use of the pardon power compare to that of past Presidents? The answer might surprise you!
+
+## Getting the data
+
+Data about presidential pardons from 1900 to present is publicly available from the US Department of Justice at [this link](https://www.justice.gov/pardon/clemency-statistics). For simplicity, I've collapsed things down to two categories: pardon that were granted, and pardons that were either denied or closed without action (which I'll just call "denied" in this post). The original data has some finer distinctions if you're interested. I extracted the data using **rvest**, and did some data wrangling since the tables change formats a few times.
+
+This analysis is done entirely in R, and if you click the "Code" buttons you can see each step.
+
+```{r}
+library(tidyverse)
+library(rvest)
+library(httr)
+library(snakecase)
+
+# get the raw data
+url <- "https://www.justice.gov/pardon/clemency-statistics"
+
+response <- httr::GET(url)
+
+raw_html <- content(response)
+
+# get presidents
+presidents <- raw_html %>%
+  html_nodes(css = ".even h2") %>%
+  html_text()
+
+# get tables
+tables_html <- raw_html %>%
+  html_nodes("table")
+
+tables <-  tables_html %>%
+  rvest::html_table(fill = TRUE)
+
+# this is where we wrangle the data in the tables. it's not pretty!
+# the tables change format a bunch of times and have columns than span multiple rows--
+# something rvest::html_table() explicitly doesn't support.
+# so instead it's fun with for loops.
+tables_mod <- list()
+
+verbose <- FALSE
+# format first 8 presidents
+for (i in 1:8){
+  if (verbose) message(i)
+  tables_mod[[i]] <- tables[[i]] %>%
+  rename(fiscal_year = 1, 
+         pending_p = 2,
+         received_p = 3,
+         granted_p = 4,
+         granted_c = 5,
+         granted_r1 = 6,
+         granted_r2 = 7,
+         petitions_denied = 8,
+         petitions_closed_c = 9) %>%
+    mutate(granted_r = (as.numeric(granted_r1) + as.numeric(granted_r2)) %>% as.character()) %>%
+    select(-granted_r1, -granted_r2) %>%
+  slice(-1) %>%
+  as_tibble() %>%
+  mutate(president = presidents[[i]])
+}
+
+for (i in 9:11) {
+tables_mod[[i]] <-
+  if (verbose) message(i)
+  tables_mod[[i]] <- tables[[i]] %>%
+    rename(fiscal_year = 1, 
+           pending_p = 2,
+           received_p = 3,
+           granted_p = 4,
+           granted_c = 5,
+           granted_r = 6,
+           petitions_denied_closed = 7) %>%
+    slice(-1) %>%
+    as_tibble() %>%
+    mutate(president = presidents[[i]])
+}
+
+for (i in 12:14){
+ if (verbose)  message(paste0(i,": ",presidents[[i]]))
+tables_mod[[i]] <- tables[[i]] %>%
+  rename(fiscal_year = 1, 
+         pending_p = 2,
+         pending_c = 3,
+         received_p = 4,
+         received_c = 5,
+         granted_p = 6,
+         granted_c = 7,
+         granted_r = 8,
+         petitions_denied_p = 9,
+         petitions_denied_c = 10) %>%
+  slice(-1) %>%
+  as_tibble() %>%
+  mutate(president = presidents[[i]])
+}
+  
+for (i in 15:20){
+ if (verbose)  message(paste0(i,": ",presidents[[i]]))
+  tables_mod[[i]] <- tables[[i]] %>%
+    rename(fiscal_year = 1, 
+           pending_p = 2,
+           pending_c = 3,
+           received_p = 4,
+           received_c = 5,
+           granted_p = 6,
+           granted_c = 7,
+           granted_r = 8,
+           petitions_denied_p = 9,
+           petitions_denied_c = 10,
+           petitions_closed_p = 11,
+           petitions_closed_c = 12) %>%
+    slice(-1) %>%
+    as_tibble() %>%
+    mutate(president = presidents[[i]])
+}
+
+for (i in 21){
+ if (verbose)  message(paste0(i,": ",presidents[[i]]))
+  tables_mod[[i]] <- tables[[i]] %>%
+    rename(fiscal_year = 1, 
+           pending_p = 2,
+           pending_c = 3,
+           pending_p_monthend = 4,
+           pending_comms_monthend = 5,
+           received_p = 6,
+           received_c = 7,
+           granted_p = 8,
+           granted_c = 9,
+           granted_r = 10,
+           petitions_denied_p = 11,
+           petitions_denied_c = 12,
+           petitions_closed_p = 13,
+           petitions_closed_c = 14) %>%
+    slice(-1) %>%
+    as_tibble() %>%
+    mutate(president = presidents[[i]])
+}
+
+
+
+pardons <- tibble(x = tables_mod) %>%
+  unnest(cols = x) %>%
+  mutate(across(everything(), function(x) if_else(is.na(x), "0", x))) %>%
+  mutate(across(everything(), str_remove_all, pattern = ",|-")) %>%
+  filter(!str_detect(fiscal_year, "Total")) %>%
+  mutate(across(c(-fiscal_year, -president), as.numeric)) %>%
+  transmute(fiscal_year = fiscal_year,
+            president = president,
+            pending = pending_p + pending_c,
+            reveived = received_p + received_c,
+            granted = granted_p + granted_c + granted_r,
+            denied = petitions_denied_closed + petitions_denied_p + petitions_denied_c,
+            closed = petitions_closed_p + petitions_closed_c,
+            denied_closed = denied + closed) %>%
+  mutate(fiscal_year = str_remove(fiscal_year, "\\(.*\\)")) %>%
+  mutate(fiscal_year = lubridate::ymd(fiscal_year, truncated = 2L))
+
+pardons_tidy <- pardons %>% 
+  select(fiscal_year, president, granted, denied_closed) %>%
+  pivot_longer(cols = c("granted", "denied_closed"), values_to = "num", names_to = "status") %>%
+  mutate(status = case_when( status == "granted" ~ "Granted",
+                             status == "denied_closed" ~ "Denied or Closed"))
+
+
+# define a helper function for the dashed lines on the plot
+pres_years <- pardons %>%
+  group_by(president) %>%
+  slice_head(n=1) %>%
+  arrange(fiscal_year) %>%
+  pull(fiscal_year)
+
+
+pres_lines <- {
+  map(pres_years, function(x) {
+    geom_vline(linetype = "dashed",
+               colour = "gray",
+               aes(xintercept = as.numeric(x)+30))
+  })
+}
+```
+
+
+## Trends over time
+
+This chart shows the number of Presidential pardons that were granted or denied each year from 1900 to present, with dashed horizontal lines to show transitions between administrations. You can click and drag to zoom, and double-clicking will reset the axes.
+
+```{r out.width="100%"}
+
+pardon_plot <- pardons_tidy %>%
+  rename(`Fiscal Year` = fiscal_year, Number = num, Status = status) %>%
+  ggplot(aes(x = `Fiscal Year`, y = Number, fill = Status, text = paste("President: ", president))) +
+  geom_col(position = "dodge") + 
+  theme_minimal() +
+  scale_x_date(label = lubridate::year,
+               breaks = seq.Date(from = lubridate::ymd("1900-01-01"), to = lubridate::ymd("2021-01-01"), by = "10 year")) +
+  labs(title = "Presidential Pardons Granted and Denied/Closed, 1900-2021",
+       subtitle = "Data source: https://www.justice.gov/pardon/clemency-statistics",
+       x = "Fiscal Year",
+       y = "",
+       fill = "Request Status") +
+  scale_fill_discrete(labels = c("Denied / Closed", "Granted")) +
+  pres_lines +
+  theme(legend.position = "bottom")
+
+pardon_plot %>%
+  plotly::ggplotly() %>% plotly::layout(legend = list(orientation = "h", x = 0.33, y = -0.2))
+```
+
+Just eyeballing it, we can see a few trends. First, the number of pardons issued is generally higher and steadier in the first half of the 20th century compared to the second half. In recent administrations we don't see much consistent use of the pardon power, with some spikes towards the ends of terms. Second, the number of requests has spiked dramatically after the year 2000, with a huge number under the Obama administration.
+
+## Number of pardons granted
+
+This chart shows the number of pardons and commutations granted by each President from 1900 to the present.
+
+```{r}
+presidents_chrono <- pardons %>% 
+  select(fiscal_year, president) %>%
+  pull(president) %>%
+  unique()
+
+pardons_over_time <- pardons %>%
+  group_by(president) %>%
+  summarise(granted = sum(granted),
+            denied_closed = sum(denied_closed)) %>%
+  mutate(percent_granted = granted/ (granted + denied_closed)) %>%
+  mutate(president = factor(president, levels = presidents_chrono)) %>%
+  arrange(president)
+
+granted_plot <-  pardons_over_time %>%
+    mutate(forcolour = granted) %>%
+  ggplot(aes(x=reorder(president, granted), 
+             y = granted, 
+             fill = str_detect(president, "Trump"),
+             text = paste("President: ", president,
+                          "\nPardons Granted: ", granted))) +
+  geom_col() + 
+  coord_flip()+
+  theme_minimal() +
+  theme(legend.position = "none") +
+  labs(title = "Pardons & Commutations Granted by President, 1900-2021",
+       x = NULL,
+       y = NULL) +
+  scale_fill_brewer(palette = "Blues")
+
+granted_plot %>%
+  plotly::ggplotly(tooltip = c("text"))
+
+```
+
+I was surprised to see that Trump gave out the third-lowest number of pardons, beat out only by the Bushes.
+
+## Percent of requests granted
+
+The situation is similar if we look at the percent of clemency requests each President granted.
+
+```{r}
+
+pct_plot <- pardons_over_time %>%
+  mutate(forcolour = percent_granted) %>%
+  ggplot(aes(x=reorder(president, percent_granted), 
+             y = percent_granted, 
+             fill = str_detect(president, "Trump"),
+             text = paste0("President: ", president,
+                           "\n% of Requests Granted: ", ( round(percent_granted, digits = 3) * 100)))) +
+  geom_col() + 
+  coord_flip() +
+  theme_minimal() +
+  theme(legend.position = "none") +
+  scale_y_continuous(labels = scales::label_percent(accuracy = 1  ))  +
+  labs(title = "% of Pardon & Commutation Requests Granted by President, 1900-2021",
+       x = NULL,
+       y = NULL)+
+  scale_fill_brewer(palette = "Blues")
+
+pct_plot %>%
+  plotly::ggplotly(tooltip = c("text"))
+```
+
+This time Trump is the second-lowest, again in close competition with the Bushes. However, Obama is now in the bottom four--we might have expected this from the large number of denied pardons we saw under Obama in the first chart up top.
+
+## Pardons for what?
+
+So Trump gave out fewer pardons and commutations than most other Presidents. But what about the pardons he *did* give? The Department of Justice also provides [details about each recipient of clemency](https://www.justice.gov/pardon/clemencyrecipients), so if you don't mind doing some data wrangling you can look at this angle too. (I don't, so I did!)
+
+For fun, let's compare the types of crimes that Trump and Obama pardoned during their administrations.
+
+```{r}
+
+# trump's pardons are easy to get since they use a simple and consistent format for the tables.
+trump_pardon_details <- httr::GET("https://www.justice.gov/pardon/pardons-granted-president-donald-trump") %>%
+  httr::content()
+
+trump_pardons <- trump_pardon_details %>%
+  rvest::html_nodes("table") %>%
+  rvest::html_table() %>% 
+  enframe() %>% 
+  select(value) %>% 
+  unnest() %>%
+  select(name = NAME,
+         offense = OFFENSE)
+
+# trump's commutations are also easy to get
+trump_comm_details <- httr::GET("https://www.justice.gov/pardon/commutations-granted-president-donald-trump-2017-2021") %>%
+  httr::content()
+
+trump_comms <- trump_comm_details %>%
+  rvest::html_nodes("table") %>%
+  rvest::html_table() %>%
+  enframe() %>%
+  select(value) %>%
+  unnest() %>%
+  select(name = NAME,
+         offense = OFFENSE)
+
+# obama's pardons, on the other hand... shield your eyes!
+obama_details <- httr::GET("https://www.justice.gov/pardon/obama-pardons") %>%
+  httr::content()
+
+obama_tables <- obama_details %>%
+  rvest::html_nodes("table") %>%
+  rvest::html_table()
+
+tab1 <- obama_tables[[1]] %>%
+  as_tibble() %>%
+  mutate(    X1 = if_else(X1 == "", "Name", X1),
+             X1 = str_remove_all(X1, ":")) %>%
+  pivot_wider(values_from = X2, names_from = "X1")
+
+# remove offense 12 and 56
+tab1$Offense[[1]] <- tab1$Offense[[1]][-c(12,56)]
+
+tab1 <- tab1 %>% 
+  select(-Sentence) %>%
+  unnest()
+
+tab2 <- obama_tables[[2]] %>%
+  as_tibble() %>%
+  mutate(X1 = if_else(X1 == "", "Name", X1),
+         X1 = str_remove_all(X1, ":") ) %>%
+  filter(!str_detect(X1, "District|Sentence")) %>%
+  pivot_wider(values_from = X2, names_from = X1) %>%
+  unnest()
+  
+tab3 <- obama_tables[[3]] %>%
+  rename(X1 = 1, X2 = 2) %>%
+  add_row(X1 = "Name", X2 = "Kosrow Afghani") %>%
+  as_tibble() %>%
+  filter(!str_detect(X1, "District|Terms")) %>%
+  mutate(X1 = if_else(str_detect(X1, "Offenses|Name"), X1, "Name"),
+         X1 = str_remove_all(X1, ":")) %>%
+  pivot_wider(values_from = X2,
+              names_from = X1) %>%
+  unnest() %>%
+  rename(Offense = Offenses)
+
+# we can handle the last tables efficiently because they have the same column names
+# they have different data formats, so we purrr::map everything to character
+tab_last <- obama_tables[4:10] %>% enframe() %>%
+  select(value) %>%
+  mutate(value = purrr::map(value, function(x) mutate(.data = x, across(everything(), as.character)))) %>%
+  unnest() %>%
+  select(Name = NAME,
+         Offense = OFFENSE)
+
+obama_pardons <- bind_rows(tab1,
+                           tab2,
+                           tab3,
+                           tab_last) %>%
+  rename(offense =  Offense,
+         name = Name)
+
+# obama's commutations are also a mess
+# to make things easier i'm only getting the offenses, since there is another table mess-up somewhere
+obama_comm_details <- httr::GET("https://www.justice.gov/pardon/obama-commutations") %>%
+  httr::content()
+
+obama_comm_tables <- obama_comm_details %>%
+  rvest::html_nodes("table") %>%
+  rvest::html_table()
+
+fix_table <- function(x){
+  x %>%
+    as_tibble() %>%
+  mutate(X1 = if_else(X1 == "" & X2 != "", "Name", X1),
+         X1 = str_remove_all(X1, ":") ) %>%
+  filter(str_detect(X1, "Offense")) %>%
+  pivot_wider(names_from = X1,
+              values_from = X2) %>%
+  select(offense = Offense) %>%
+  unnest()
+}
+
+obama_comms <- purrr::map_df(obama_comm_tables, fix_table)
+
+obama_pcs <- bind_rows(obama_pardons, obama_comms)
+
+trump_pcs <- bind_rows(trump_comms, trump_pardons)
+```
+
+```{r}
+fraud_def <- "fraud|tax|embez"
+drug_def <- "marij|cocaine|crack|meth|heroin"
+
+obama_sum <- obama_pcs %>%
+  summarise(president = "Obama",
+            fraud = sum(str_detect(offense, fraud_def)),
+            minor_drug = sum(
+              (str_detect(offense, drug_def) & !str_detect(offense, "kilo"))),
+            major_drug = sum(
+              (str_detect(offense, drug_def) & str_detect(offense, "kilo"))),
+            other = sum((!str_detect(offense, fraud_def) & !str_detect(offense, drug_def))
+                        ))
+
+trump_sum <- trump_pcs %>%
+  summarise(president = "Trump",
+            fraud = sum(str_detect(offense, fraud_def)),
+            minor_drug = sum(
+              (str_detect(offense, drug_def) & !str_detect(offense, "kilo"))),
+            major_drug = sum(
+              (str_detect(offense, drug_def) & str_detect(offense, "kilo"))),
+            other = sum((!str_detect(offense, fraud_def) & !str_detect(offense, drug_def))
+                        ))
+
+pres_sum <- bind_rows(obama_sum, trump_sum)
+```
+
+To keep it simple, I broke crimes down into four categories based on the text that appears in the listed offense:
+
+* **Fraud/Tax/Embezzlement**, which I defined as an offense that includes the text "fraud", "tax", or "embez".
+* **Minor Drug Crimes**, which I defined as an offense that includes the name of a drug (marijuana, cocaine, crack, meth, or heroin) but does *not* include the word "kilo".
+* **Major Drug Crimes**, which include the name of a drug *and* the word "kilo."
+* **Other**, for anything that doesn't fall into those three categories.
+
+This is an imperfect system (and I am not a lawyer, so these categories may not be quite right), but the table below gives us some insight into how these two Presidents used their powers of clemency. Not that there is a small amount of double-counting for crimes that had both e.g. tax and drug implications.
+
+```{r}
+pres_sum %>%
+  janitor::adorn_totals(where = "both") %>%
+  knitr::kable(col.names = c("President", "Fraud/Tax/Embez.", "Minor Drug", "Major Drug", "Other", "Total")) %>%
+  kableExtra::kable_styling()
+```
+
+One difference jumps off the page: Obama gave clemency for a ton of minor drug offenses. Notably, Obama pardoned fewer tax/fraud/embezzlement cases than Trump, despite giving nearly 8 times more clemencies!
+
+We can get a good look at the relative differences by plotting the *percentages* of total clemencies that each President gave to each category of crime.
+
+```{r}
+summary_plot <- pres_sum %>%
+  pivot_longer(cols = -president,
+               names_to = "crime") %>%
+  group_by(president) %>%
+  mutate(total = sum(value),
+         pct = value/total,
+         crime = snakecase::to_title_case(crime)) %>%
+  ggplot(aes(x=crime,
+             y = pct, 
+             fill = president,
+             text = paste0("President: ", president,
+                          "\nCrime Type: ", crime,
+                          "\n% of Pardons/Commutations: ", round(pct, digits = 3) * 100, "%"))) +
+  geom_col(position = "dodge") +
+  theme_minimal() +
+  labs(title = "Pardons & Commutations by Type of Crime: Obama & Trump",
+      x = NULL,
+      y = NULL,
+      fill = "President") +
+  scale_x_discrete(labels = c("Fraud", "Major Drug", "Minor Drug", "Other")) +
+  scale_y_continuous(labels = scales::percent) +
+    scale_fill_brewer()
+
+summary_plot %>%
+  plotly::ggplotly(tooltip = "text") %>%
+  plotly::layout(legend = list(orientation = "h", x = 0.45, y = -.1))
+```
+
+This highlights our observation from the table: nearly 80% of Obama's pardons/commutations were for minor drug crimes, and nearly 30% of Trump's were for white-collar crimes like fraud.
+
+## Context, quantity, and quality
+
+This is a quick and *relatively context-free* look at how Trump compares to other Presidents in terms of the sheer *quantity* of pardons broken down into a few categories. We've seen that Presidents have changed how they tend to use the pardon power over time, and that Trump gave out the third-lowest number of pardons since 1900. We've also seen that Trump gave out a much larger proportion of his pardons for white-collar crimes than, for example, Obama did.
+
+But here we bump into the limits of this kind of surface-deep data-science analysis, and to go further we'd need to have a broader discussion that includes normative, historical, and political dimensions.
+
+For example, one might wonder how much sense it makes to have an executive pardon power not subject to legislative review or other accountability measures, whether these [lightning-strike acts of mercy](https://twitter.com/ddale8/status/1113891464096960512) are only a distraction from [serious structural problems](https://muse.jhu.edu/article/727800), or the question of the *quality* or appropriateness of specific Presidential pardons, [which](https://www.chicagotribune.com/sns-clinton-pardons-analysis-story.html)  [readers](https://www.theguardian.com/us-news/2019/dec/27/eddie-gallagher-trump-navy-seal-iraq)  [may](https://globalnews.ca/news/7308066/steve-bannon-fraud-trial-date/)  [judge](https://apnews.com/article/donald-trump-politics-iraq-baghdad-massacres-371cbf4b621ee8a08c307777c29abc14)  [for](https://www.bloomberg.com/news/articles/2020-02-18/trump-commutes-prison-sentence-of-blagojevich-pardons-kerik)  [themselves](https://www.npr.org/2019/05/16/723849097/trump-pardons-his-friend-conrad-black-who-wrote-glowing-trump-biography-last-yea). Data can certainly inform these discussions, but it can't tell us which discussions are important or which positions we should take.
