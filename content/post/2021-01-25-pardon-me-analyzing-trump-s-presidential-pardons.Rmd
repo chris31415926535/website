@@ -18,7 +18,7 @@ image:
   preview_only: no
 projects: []
 header:
-  image: "/headers/2021-01-24-presidential-pardons.png"
+  image: ""
   caption: ""
 ---
 
