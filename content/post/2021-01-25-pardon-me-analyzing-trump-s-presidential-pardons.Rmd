@@ -1,7 +1,7 @@
 ---
 title: Pardon Me? Analyzing Trump's Presidential Pardons
 author: Christopher Belanger
-date: '2021-01-25'
+date: '2021-01-24'
 slug: pardon-me-analyzing-trump-s-presidential-pardons
 categories: []
 tags:
@@ -10,7 +10,7 @@ tags:
 subtitle: ''
 summary: 'Presidential pardons have been all over the news this week, since Donald Trump issued a number of of them on his way out the door. But how does his use of the pardon power compare to that of past Presidents? The answer might surprise you!'
 authors: []
-lastmod: '2021-01-25T14:08:58-05:00'
+lastmod: '2021-01-24T09:08:58-05:00'
 featured: no
 image:
   caption: ''
