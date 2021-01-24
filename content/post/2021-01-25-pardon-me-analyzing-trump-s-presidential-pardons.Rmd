@@ -17,6 +17,9 @@ image:
   focal_point: ''
   preview_only: no
 projects: []
+header:
+  image: ""
+  caption: ""
 ---
 
 
@@ -28,6 +31,9 @@ knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
 # Pardon Me? 
 
 Presidential pardons have been all over the news this week, since [Donald Trump issued a number of of them on his way out the door](https://www.cbc.ca/news/world/trump-pardons-bannon-1.5878675). This got me wondering--how does Trump's use of the pardon power compare to that of past Presidents? The answer might surprise you!
+
+
+<img src = "/img/headers/2021-01-24-presidential-pardons.png" width = "350" alt = "A mysterious bar chart where many labels have been replaced with question marks.">
 
 ## Getting the data
 
@@ -511,7 +517,7 @@ But here we bump into the limits of this kind of surface-deep data-science analy
 For example, one might wonder how much sense it makes to have an executive pardon power not subject to legislative review or other accountability measures, whether these [lightning-strike acts of mercy](https://twitter.com/ddale8/status/1113891464096960512) are only a distraction from [serious structural problems](https://muse.jhu.edu/article/727800), or the question of the *quality* or appropriateness of specific Presidential pardons, [which](https://www.chicagotribune.com/sns-clinton-pardons-analysis-story.html)  [readers](https://www.theguardian.com/us-news/2019/dec/27/eddie-gallagher-trump-navy-seal-iraq)  [may](https://globalnews.ca/news/7308066/steve-bannon-fraud-trial-date/)  [judge](https://apnews.com/article/donald-trump-politics-iraq-baghdad-massacres-371cbf4b621ee8a08c307777c29abc14)  [for](https://www.bloomberg.com/news/articles/2020-02-18/trump-commutes-prison-sentence-of-blagojevich-pardons-kerik)  [themselves](https://www.npr.org/2019/05/16/723849097/trump-pardons-his-friend-conrad-black-who-wrote-glowing-trump-biography-last-yea). Data can certainly inform these discussions, but it can't tell us which discussions are important or which positions we should take.
 
 
-```{r}
+```{r, eval = FALSE}
 pardons_over_time %>%
   ggplot(aes(x=reorder(president, -granted), y = granted, fill = 1)) +
   geom_col() +
