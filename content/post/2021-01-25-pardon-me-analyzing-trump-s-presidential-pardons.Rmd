@@ -18,7 +18,7 @@ image:
   preview_only: no
 projects: []
 header:
-  image: ""
+  image: "/headers/2021-01-24-presidential-pardons.png"
   caption: ""
 ---
 
@@ -32,8 +32,6 @@ knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
 
 Presidential pardons have been all over the news this week, since [Donald Trump issued a number of of them on his way out the door](https://www.cbc.ca/news/world/trump-pardons-bannon-1.5878675). This got me wondering--how does Trump's use of the pardon power compare to that of past Presidents? The answer might surprise you!
 
-
-<img src = "/img/headers/2021-01-24-presidential-pardons.png" width = "350" alt = "A mysterious bar chart where many labels have been replaced with question marks.">
 
 ## Getting the data
 
