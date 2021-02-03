@@ -1,0 +1,208 @@
+---
+title: COVID Countdown! Building a Shiny Dashboard to Track Vaccinations in Canada
+author: Christopher Belanger
+date: '2021-02-04'
+slug: covid-countdown-building-a-shiny-dashboard-to-track-vaccinations-in-canada
+categories: []
+tags:
+  - covid-19
+  - RStats
+  - shiny
+subtitle: ''
+summary: "Trudeau has committed to vaccinating every willing Canadian against COVID-19 by September. So how's it going so far? I built a dashboard to find out, and, well..."
+authors: []
+lastmod: '2021-02-02T13:20:27-05:00'
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: no
+projects: []
+---
+
+```{r include = FALSE}
+library(tidyverse)
+library(plotly)
+library(lubridate)
+
+## here is where we load the data if we didn't need to update it
+all_stats <- read_csv("../../static/data/2021-02-04-all.csv") %>%
+    mutate(date = lubridate::ymd(date))
+provinces <- read_csv("../../static/data/2021-02-04-province_info.csv")
+last_update <- "2021-02-02"
+
+
+# make a tibble with the supplementary information
+
+supp_stats <- tibble(    code = all_stats %>%
+                             group_by(province) %>%
+                             select(province) %>%
+                             arrange(province) %>%
+                             distinct() %>%
+                             pull(province),
+                         
+                         date_first_vaccine = all_stats %>%
+                             group_by(province) %>%
+                             filter(total_vaccinations > 0) %>%
+                             arrange(province, date) %>%
+                             slice_head(n=1) %>%
+                             pull(date),
+                         
+                         date_last_vaccine = all_stats %>%
+                             group_by(province) %>%
+                             arrange(province, date) %>%
+                             slice_tail(n=1) %>%
+                             pull(date),
+                         
+                         vaccines_so_far = all_stats %>%
+                             group_by(province) %>%
+                             arrange(province) %>%
+                             select(total_vaccinations) %>%
+                             summarise(total_vaccinations = max(total_vaccinations, na.rm = TRUE)) %>%
+                             pull(total_vaccinations)
+) %>%
+    left_join(provinces) %>%
+    mutate (avg_vaccines_per_minute = vaccines_so_far / as.numeric(difftime(date_last_vaccine, date_first_vaccine, unit = "mins")),
+            vaccines_reqd = population * 2,
+            mins_to_full_vaccination = floor(vaccines_reqd / avg_vaccines_per_minute),
+            
+            date_of_full_vaccination = Sys.time() + lubridate::minutes(mins_to_full_vaccination))
+
+all_stats <- all_stats %>%
+    left_join(select(supp_stats, code, name), by = c("province"="code"))
+
+# define lubridate date-time-stamp
+sf <- stamp("Sunday, January 17, 1999, at 3:34PM")
+
+prov_options <- c(provinces$code)
+names(prov_options) <- provinces$name
+
+tz_options <- c(
+    "Pacific  (GMT-8:00)" = "America/Vancouver",
+    "Mountain (GMT-7:00)" = "America/Edmonton",
+    "Central  (GMT-6:00)" = "America/Winnipeg",
+    "Eastern  (GMT-5:00)" = "America/Toronto",
+    "Atlantic (GMT-4:00)" = "America/Moncton",
+    "Nfld.    (GMT-3:30)" = "America/St_Johns"
+)
+
+tz_abbrs <- c(
+    "America/Vancouver" = "PST",
+    "America/Edmonton" = "MST",
+    "America/Winnipeg" = "CST",
+    "America/Toronto" = "EST",
+    "America/Moncton" = "AST",
+    "America/St_Johns" = "NST"
+)
+
+vaccinations <- all_stats %>%
+  filter(name == "Canada")
+
+statistics <- supp_stats %>%
+  filter(name == "Canada")
+
+verbose <- FALSE
+
+```
+
+
+The Government of Canada has [stated that "the majority" of Canadians should be vaccinated against COVID-19 by September of 2021](https://globalnews.ca/news/7488324/vaccine-coronavirus-trudeau-nato-fortin/), and PM Trudeau [doubled down on this statement in late January](https://www.cbc.ca/news/politics/trudeau-vaccine-covid-target-september-1.5888178). So how's it going so far?
+
+To figure it out, I built [an interactive dashboard](http://dashboards.belangeranalytics.com/covid_vaccine_predictor/) that shows how many vaccinations have been given across Canada and the provinecs, and predicts how long it will take to finish the job at the rate we're going. 
+
+The results are... [well, take a look for yourself](http://dashboards.belangeranalytics.com/covid_vaccine_predictor/).
+
+```{r message = FALSE, warning = FALSE, echo = FALSE}
+
+ 
+        predicted_line <- tribble(~date, ~total_vaccinations,
+                                  statistics$date_first_vaccine, 0,
+                                  statistics$date_of_full_vaccination, statistics$vaccines_reqd) %>%
+            mutate(date = as_date(date))
+        
+        vac_plot <- vaccinations %>%
+            filter(total_vaccinations > 0) %>%
+            ggplot(aes(x = date, y = total_vaccinations)) +
+            geom_line(aes(colour = "Administered",
+                          linetype = "Administered")) +
+            geom_point(aes(colour = "Administered",
+                           linetype = "Administered",
+                           text = paste0("Jurisdiction: ", name,
+                                         "\nDate: ", date,
+                                         "\nTotal Vaccines Administered: ", total_vaccinations))) +
+            geom_hline(aes(yintercept = statistics$vaccines_reqd, 
+                           colour = "Required",
+                           linetype = "Required")) +
+            geom_line(data = predicted_line,
+                      aes(linetype = "Predicted",
+                          colour = "Predicted")) +
+            scale_y_continuous(label = scales::comma_format()) +
+            theme_minimal() +
+            labs(x = "Date",
+                 y = "Total Vaccines Administered",
+                 title ="Actual and Predicted Vaccinations in Canada, as of February 2, 2021",
+                 subtitle = "Click and drag to zoom!") +
+            scale_linetype_manual("Vaccines Administered", values = c("dotted", "twodash", "solid")) +
+            scale_colour_brewer(palette = "Dark2" ) +
+            labs(linetype = NULL,
+                 colour = NULL,
+                 legend = NULL) +
+            theme(legend.title = element_blank()) +
+            scale_linetype(c("solid", "dashed", "dotted"))
+        
+        vac_plot %>%
+            plotly::ggplotly(dynamicTicks = TRUE,
+                             tooltip = c("text")) %>%
+            plotly::layout(legend = list(orientation = "h", x = 0.27, y = -0.2),
+                           title = list(text = paste0('Canadian Actual & Predicted COVID-19 Vaccinations',
+                                    '<br>',
+                                    '<sup>',
+                                    'Data accurate as of February 2, 2021. Click and drag to zoom!',
+                                    '</sup>')))
+        # thanks to this link for the tip about subtitles in plotly! https://datascott.com/blog/subtitles-with-ggplotly/
+```
+
+
+
+The rest of this post is a high-level discussion of how I put the dashboard together, in case anyone would like to make their own.
+
+[You can check out the code on Github here.](https://github.com/chris31415926535/covid_vaccine_predictor)
+
+
+## The code framework: **shiny**, **shinydashboard**, the **tidyverse**, and **plotly**
+
+I work primarily in R, so I decided to build this dashboard using the [**shiny**](https://shiny.rstudio.com/) and [**shinydashboard**](https://rstudio.github.io/shinydashboard/) packages. If you're not familiar, these packages make it pretty easy to turn an R-based data science/data analysis project into an interactive web app. The **shinydashboard** package takes **shiny**'s basic approach adds some neat features like tabs, sidebars, and other fun stuff.
+
+For examples of what you can do with R and **shiny**, check out my [interactive COVID-19 physical distance simulation](/post/interactive-covid-19-simulation-the-effects-of-physical-distancing-on-transmission/) or my [NLP model that predicts customer ratings from review texts](/post/a-fast-effective-and-simple-classification-model-for-customer-reviews/.
+
+I'm a big fan of the **tidyverse** suite of packages and [their general approach to wrangling and problem-solving](https://r4ds.had.co.nz/), so they were a natural fit.
+
+Finally, I decided to use **plotly** to generate interactive visualizations. Interactivity plots give web apps some real extra "oomph," and I appreciate how the plotly::ggplotly() function makes it easy to take standard **ggplot2** visualizations and make them interactive.
+
+## The data: covid19tracker.ca
+
+All the data comes from one most excellent source: the [COVID-19 Tracker Canada Project](https://covid19tracker.ca/). It's available through a [public API](https://covid19tracker.ca/) that's very easy to use, and their documentation is great! (I actually found their API *first*, and then got the idea for the dashboard after.)
+
+## The logic of the app
+
+The data analysis part of the app is pretty simple. It's roughly:
+
+* Check how long since we updated the data. If it's been more than 4 hours, do a refresh and store the data locally. (This is so we don't spam covid19tracker.ca's servers.)
+* For each region, get the first vaccination date, the number so far, the average vaccinations per minute, and the total number required.
+* Then figure out when we'll hit that target.
+
+It does all of this math on start-up. Then the drop-down menus just let you filter the data for a specific jurisdiction, and choose the time zone in which you'd like to receive your depressing prediction. This is a Canada-wide app, after all!^[Yes, I hear you and I agree, if it's truly a Canadian product il serait meilleur d'avoir un version francais aussi. Je suis sur que c'est assez clair que je ne pourrais pas le faire moi-meme, donc lancez-moi un courriel si vous voulez m'aider avec une traduction!]
+
+## Web hosting
+
+I'm hosting the open-source version of shiny-server on an Amazon Web Services machine, specifically a t2.micro AWS EC2 instance running Ubnutu, the smallest (and free-est) option. I'm using a [docker image called rocker/shiny-verse](https://hub.docker.com/r/rocker/shiny-verse), because--and **no guides online mentioned this**--I wasn't able to install shiny as usual on the t2.micro: it kept crashing when compiling **httpuv**. I guess I could have paid 25 cents to get some extra RAM for as long as it took to install, but docker solved the problem for now.
+
+## The crux: Dark humour as a call to action
+
+The basic idea is: how long will it actually take to reach our stated vaccination targets if we continue at our current rate?
+
+The general narrative I've been seeing is that vaccines are unequivocally good news, and that things are overall going great, or at least going. Sure, there have been supply setbacks, but we're getting those numbers up every day and we're going to meet our end-of-September goal.
+
+But are we? Are we *really?* Enter this dashboard, to give a sobering and evidence-based answer.
+
+And as of February 2, 2021, it looks like we won't. To be clear **I really, really, really hope we do hit our targets**. But we're not going to get there through limp assertions and cynically performative optimism. If things suck, we need to know about it now so that we can work on them.
