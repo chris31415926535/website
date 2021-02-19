@@ -13,7 +13,9 @@ featured: no
 image:
   caption: ''
   focal_point: ''
-  preview_only: no
+  preview_only: yes
+header:
+  image: '/headers/2021-02-19-ottawa-thumbnail.png'
 projects: []
 ---
 
