@@ -14,8 +14,6 @@ image:
   caption: ''
   focal_point: ''
   preview_only: yes
-header:
-  image: '/headers/2021-02-19-ottawa-thumbnail.png'
 projects: []
 ---
 
@@ -105,11 +103,19 @@ da_over_eighty %>%
 
 The distribution has a strong right skew: most DAs have fewer than 100 age-80+ residents, but a few have over 750! This suggests that we might be able to make quick progress by focusing vaccination efforts on those DAs first.
 
-As a next step, we can make a static map to see where the DAs are with the highest age-80+ population levels. (We'll make an interactive map soon!  )
+As a next step, we can make an interactive map to see where the DAs are with the highest age-80+ populations.
 
 ```{r, include = FALSE}
 da_shp <- sf::read_sf("/Documents and Settings/chris/Documents/Jobs/2020/Ottawa Neighbourhood Study/999. Often-used datafiles/lda_000b16a_e/lda_000b16a_e.shp")
 
+# da_over_eighty_shp %>%
+#   sf::st_transform(crs = 32189) %>%
+#   ggplot() +
+#   geom_sf(aes(fill = over_eighty), colour = NA) +
+#   viridis::scale_fill_viridis() +
+#   theme_minimal() +
+#   labs(fill = "Pop. Aged 80+",
+#        caption = "Data Source: Statistics Canada")
 ```
 
 ```{r}
@@ -121,37 +127,30 @@ da_over_eighty_shp <- da_shp %>%
   left_join(da_over_eighty, by = c("DAUID" = "GEO_ID"))  %>%
   sf::st_transform(crs = 32189)
 
-da_over_eighty_shp %>%
-  sf::st_transform(crs = 32189) %>%
-  ggplot() +
-  geom_sf(aes(fill = over_eighty), colour = NA) +
-  viridis::scale_fill_viridis() +
-  theme_minimal() +
-  labs(fill = "Pop. Aged 80+",
-       caption = "Data Source: Statistics Canada")
+
 
 ```
 
-```{r leaflet_map_eighty, include = FALSE}
+```{r leaflet_map_eighty}
 
-# labs_ottawa <- paste0("DAUID: ", da_over_eighty_shp$DAUID,
-#                       "<br>Population 80+: ", da_over_eighty_shp$over_eighty) %>%
-#   purrr::map(htmltools::HTML)
-# 
-# pal_non_ott <- colorNumeric(palette = "viridis",
-#                           domain = da_over_eighty_shp$over_eighty,
-#                           reverse = FALSE)
-# da_over_eighty_shp %>%
-#   sf::st_transform(crs = "WGS84") %>%
-#   leaflet() %>%
-#   addTiles() %>%
-#   addPolygons(fillColor = ~ pal_non_ott(over_eighty),
-#               fillOpacity = 0.7,
-#               weight = 1,
-#               label = labs_ottawa) %>%
-#   addLegend(pal = pal_non_ott,
-#             values = ~ over_eighty,
-#             title = "Pop. Aged 80+")
+labs_ottawa <- paste0("DAUID: ", da_over_eighty_shp$DAUID,
+                      "<br>Population 80+: ", da_over_eighty_shp$over_eighty) %>%
+  purrr::map(htmltools::HTML)
+
+pal_non_ott <- colorNumeric(palette = "viridis",
+                          domain = da_over_eighty_shp$over_eighty,
+                          reverse = FALSE)
+da_over_eighty_shp %>%
+  sf::st_transform(crs = "WGS84") %>%
+  leaflet() %>%
+  addTiles() %>%
+  addPolygons(fillColor = ~ pal_non_ott(over_eighty),
+              fillOpacity = 0.7,
+              weight = 1,
+              label = labs_ottawa) %>%
+  addLegend(pal = pal_non_ott,
+            values = ~ over_eighty,
+            title = "Pop. Aged 80+")
 ```
 
 Two bright yellow spots jump out! However, if you squint at the map you'll notice a trend: many of the lighter spots tend to contain facilities that care for older adults. The bright yellow spot to the east, for example, includes The Ottawa Hospital and at least one retirement home; the yellow spot to the west contains Forest Hill and some other retirement residences; and centrally on Riverside we can see the DA where St. Patrick's is located.
