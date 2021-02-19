@@ -103,17 +103,11 @@ da_over_eighty %>%
 
 The distribution has a strong right skew: most DAs have fewer than 100 age-80+ residents, but a few have over 750! This suggests that we might be able to make quick progress by focusing vaccination efforts on those DAs first.
 
-As a next step, we can make an interactive map to see where the DAs are with the highest age-80+ population levels:
+As a next step, we can make a static map to see where the DAs are with the highest age-80+ population levels. (We'll make an interactive map soon!  )
 
 ```{r, include = FALSE}
 da_shp <- sf::read_sf("/Documents and Settings/chris/Documents/Jobs/2020/Ottawa Neighbourhood Study/999. Often-used datafiles/lda_000b16a_e/lda_000b16a_e.shp")
-# da_over_eighty_shp %>%
-#   sf::st_transform(crs = 32189) %>%
-#   ggplot() + 
-#   geom_sf(aes(fill = over_eighty), colour = NA) +
-#   viridis::scale_fill_viridis() +
-#   theme_minimal() +
-#   labs(fill = "Pop. Aged 80+")
+
 ```
 
 ```{r}
@@ -125,33 +119,40 @@ da_over_eighty_shp <- da_shp %>%
   left_join(da_over_eighty, by = c("DAUID" = "GEO_ID"))  %>%
   sf::st_transform(crs = 32189)
 
-
-
-```
-
-```{r leaflet_map_eighty}
-
-labs_ottawa <- paste0("DAUID: ", da_over_eighty_shp$DAUID,
-                      "<br>Population 80+: ", da_over_eighty_shp$over_eighty) %>%
-  purrr::map(htmltools::HTML)
-
-pal_non_ott <- colorNumeric(palette = "viridis",
-                          domain = da_over_eighty_shp$over_eighty,
-                          reverse = FALSE)
 da_over_eighty_shp %>%
-  sf::st_transform(crs = "WGS84") %>%
-  leaflet() %>%
-  addTiles() %>%
-  addPolygons(fillColor = ~ pal_non_ott(over_eighty),
-              fillOpacity = 0.7,
-              weight = 1,
-              label = labs_ottawa) %>%
-  addLegend(pal = pal_non_ott,
-            values = ~ over_eighty,
-            title = "Pop. Aged 80+")
+  sf::st_transform(crs = 32189) %>%
+  ggplot() +
+  geom_sf(aes(fill = over_eighty), colour = NA) +
+  viridis::scale_fill_viridis() +
+  theme_minimal() +
+  labs(fill = "Pop. Aged 80+",
+       caption = "Data Source: Statistics Canada")
+
 ```
 
-Two bright yellow spots jump out! However, if you explore the map you'll notice a trend: many of the lighter spots tend to contain facilities that care for older adults. The bright yellow spot to the east, for example, includes The Ottawa Hospital and at least one retirement home; the yellow spot to the west contains Forest Hill and some other retirement residences; and centrally on Riverside we can see the DA where St. Patrick's is located.
+```{r leaflet_map_eighty, include = FALSE}
+
+# labs_ottawa <- paste0("DAUID: ", da_over_eighty_shp$DAUID,
+#                       "<br>Population 80+: ", da_over_eighty_shp$over_eighty) %>%
+#   purrr::map(htmltools::HTML)
+# 
+# pal_non_ott <- colorNumeric(palette = "viridis",
+#                           domain = da_over_eighty_shp$over_eighty,
+#                           reverse = FALSE)
+# da_over_eighty_shp %>%
+#   sf::st_transform(crs = "WGS84") %>%
+#   leaflet() %>%
+#   addTiles() %>%
+#   addPolygons(fillColor = ~ pal_non_ott(over_eighty),
+#               fillOpacity = 0.7,
+#               weight = 1,
+#               label = labs_ottawa) %>%
+#   addLegend(pal = pal_non_ott,
+#             values = ~ over_eighty,
+#             title = "Pop. Aged 80+")
+```
+
+Two bright yellow spots jump out! However, if you squint at the map you'll notice a trend: many of the lighter spots tend to contain facilities that care for older adults. The bright yellow spot to the east, for example, includes The Ottawa Hospital and at least one retirement home; the yellow spot to the west contains Forest Hill and some other retirement residences; and centrally on Riverside we can see the DA where St. Patrick's is located.
 
 In other words, this tells us where *all* age-80+ residents live, including those in long-term care homes and other facilities. But since [Ottawa is doing reasonably well at vaccinating people in these facilities](https://ottawa.ctvnews.ca/ottawa-wrapping-up-covid-19-vaccinations-for-long-term-care-residents-1.5297204), we might want to try to separate them out.
 
@@ -224,6 +225,7 @@ da_priority <- da_non_shp %>%
 
 labs_priority <- paste0("DAUID: ", da_priority$DAUID,
                       "<br>Population 80+: ", da_priority$over_eighty,
+                      "<br># LTC/Retr. Homes: ", da_priority$num_ltcrh,
                       "<br>Priority: ", da_priority$priority) %>%
   purrr::map(htmltools::HTML)
 
