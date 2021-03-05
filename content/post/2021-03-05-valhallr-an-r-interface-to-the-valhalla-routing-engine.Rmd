@@ -13,8 +13,6 @@ summary: "The 'valhallr' package provides an R interface to the Valhalla routing
 authors: []
 lastmod: '2021-03-05T14:57:22-05:00'
 featured: no
-header:
-  image: '/headers/2021.03.05-header-isochrone.png'
 image:
   caption: ''
   focal_point: ''
@@ -43,6 +41,8 @@ map_isochrone(i)
 # map_isochrone(i, method = "ggplot") +
 #   ggplot2::scale_fill_continuous(breaks = c(5,10,15), labels = c(5,10,15)) +
 #   ggplot2::theme(axis.text = ggplot2::element_blank())
+# header:
+#   image: '/headers/2021.03.05-header-isochrone.png'
 ```
 
 # Why Valhalla? Why valhallr?
