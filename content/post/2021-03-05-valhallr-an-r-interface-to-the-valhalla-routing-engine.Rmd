@@ -1,0 +1,264 @@
+---
+title: 'valhallr: An R Interface to the Valhalla Routing Engine'
+author: Christopher Belanger
+date: '2021-03-05'
+slug: []
+categories: []
+tags:
+  - RStats
+  - geospatial
+  - cran
+subtitle: ''
+summary: "The 'valhallr' package provides an R interface to the Valhalla routing engine--the same one Tesla uses in its cars. This post introduces the package and demonstrates how to use it to generate turn-by-turn directions, origin-destination analyses, and isochrones."
+authors: []
+lastmod: '2021-03-05T14:57:22-05:00'
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: no
+projects: []
+---
+
+# Introducing the 'valhallr' package!
+
+I'm excited to announce that my new R package **valhallr** is now available on CRAN, and can be installed simply by typing `install.packages("valhallr")`! I'm looking forward to seeing what people do with it (and receiving bug reports), but in this quick post I'll outline the why, the what, and the how.
+
+As a top-line demo, though, this image shows how far you can walk from the University of Ottawa Campus in 5 minutes, 10 minutes, and 15 minutes. valhallr lets you generate analyses like this with just a few lines of R code.
+
+```{r eval = FALSE, echo = TRUE}
+library(valhallr)
+origin <- test_data("uottawa")
+i <- isochrone(from = origin)
+map_isochrone(i)
+```
+
+```{r include = TRUE, echo = FALSE, message = FALSE, warning = FALSE}
+library(valhallr)
+origin <- test_data("uottawa")
+i <- isochrone(from = origin, host = "192.168.2.30")
+map_isochrone(i)
+map_isochrone(i, method = "ggplot") +
+  ggplot2::scale_fill_continuous(breaks = c(5,10,15), labels = c(5,10,15)) +
+  ggplot2::theme(axis.text = ggplot2::element_blank())
+```
+
+# Why Valhalla? Why valhallr?
+
+Valhalla is a fast and effective open-source routing engine that can give detailed walking, cycling, and driving directions using road information from OpenStreetMaps. If you've ever used Google Maps to figure out how to get from A to B, Valhalla is just like that except you can download it and run it on your own computer. Apparently it's also the software [Tesla uses as its in-car navigation](https://insideevs.com/news/333797/tesla-turns-to-open-sourcing-for-updates-to-mapping-platform/).
+
+If you're wondering why you'd want to run your own routing engine, consider this health-access analysis we're doing through the [Ottawa Neighbourhood Study](https://www.neighbourhoodstudy.ca/). Imagine you wanted to find the average travel distance between each of Ottawa's roughly 8,000 city blocks and its nearly 1,000 family physicians: that's roughly 8 million trips. It would take, um, a bit too long to type each of those into Google Maps one by one, and it would be pretty expensive to run this analysis using Google's commercial option. 
+
+With Valhalla you can run the analysis as often as you want, with only the cost of the time it takes to get things running. And with **valhallr**, you can automate your analysis and analyze all the data from within the comfort of your R IDE.
+
+# Step 0: Install and run Valhalla
+
+This package provides an R-native interface to the Valhalla routing engine, and assumes that you have access to a running Valhalla instance. If you don't, you won't be able to use any of the functions described in this post! Valhalla is open source, and here are some resources that I found helpful:
+
+* [Valhalla's GitHub page](https://github.com/valhalla/)
+* [Valhalla's API documentation](https://valhalla.readthedocs.io/en/latest/)
+* [GIS-OPS's helpful guide for installing Valhalla](https://gis-ops.com/valhalla-part-1-how-to-install-on-ubuntu/)
+
+The rest of this post assumes a running Valhalla instance on localhost at the default port 8002.
+
+# Load the package and point it to Valhalla
+
+Once you have access to Valhalla, you're ready to start. The package lets you specify any hostname/IP address and port, but as a default it looks at port 8002 on "localhost". Here we'll set the hostname and port manually to make it
+clear.
+
+
+
+```r
+library(valhallr)
+host <- "localhost"
+port <- 8002
+```
+
+
+
+# Turn-by-turn routing
+
+The function `valhallr::route()` uses Valhalla to generate detailed turn-by-turn routing from an origin to a destination. It's straightforward to use: you provide origin and destination coordinates in tibbles with `lat` and `lon` columns, along with any number of optional options, and the API returns an object containing the resulting trip.
+
+This example shows how to generate driving directions between the University of Ottawa and the Canadian Tire Centre, a stadium in Ottawa. It gets these coordinates from the function `valhallr::test_data()`, which can return coordinates for several points of interest around Ontario. It then calls `valhallr::route()` between these two locations with all default options, and then passes the result to `valhallr::print_trip()`.
+
+
+```r
+origin <- test_data("uottawa")
+destination <- test_data("cdntirecentre")
+t <- route(from = origin,
+           to = destination,
+           hostname = host,
+           port = port)
+
+print_trip(t)
+```
+
+
+`From lat/lng: 45.4234, -75.6832`<br>
+`To   lat/lng: 45.2975, -75.9279`<br>
+`Time: 19.9 minutes`<br>
+`Dist: 28.693 km`
+
+
+We can see that Valhalla has generated a trip from uOttawa to the Canadian Tire Centre that's 28.693km long and would take 19.9 minutes to drive. But what does the trip look like?
+
+We can answer this question with the function `valhallr::map_trip()` that takes the Valhalla trip object, decodes an embedded shapefile, and plots the result on a map. (You can use `valhallr::decode()` to extract the shapefile yourself for other purposes.) The `map_trip()` function supports an interactive map using **leaflet** or an static map using **ggplot2**. Here we'll generate a static map.
+
+
+```r
+map_trip(t, method = "ggplot")
+```
+
+<img src="valhallr-map_ottawa_auto-1.jpeg" title="plot of chunk map_ottawa_auto" alt="plot of chunk map_ottawa_auto" width="100%" />
+
+What if we wanted to travel by bicycle instead? We can change our travel method from the default, "auto", using the `costing` parameter. Here we set it to "bicycle" and re-run the command:
+
+
+```r
+t <- route(from = origin,
+           to = destination,
+           costing = "bicycle",
+           hostname = host,
+           port = port)
+
+print_trip(t)
+```
+Here's the output: 
+
+`From lat/lng: 45.4234, -75.6832`<br>
+`To   lat/lng: 45.2975, -75.9279`<br>
+`Time: 108 minutes`<br>
+`Dist: 30.028 km`
+
+
+This new trip is a bit longer at 30.028km, and would take quite a bit longer at 108 minutes. When we map it, we can see that Valhalla has given us a plausible cycling trip that takes a scenic route along the riverside path and avoids major highways:
+
+
+```r
+map_trip(t, method = "ggplot")
+```
+
+<img src="valhallr-map_ottawa_bicycle-1.jpeg" title="plot of chunk map_ottawa_bicycle" alt="plot of chunk map_ottawa_bicycle" width="100%" />
+
+The turn-by-turn routing information, along with a lot of other feedback from Valhalla, is all included in the response as well.
+
+# Origin-destination analyses
+
+Many analyses require the shortest distance or time between a large number of locations without needing to know the specific routes taken. Sometimes this information is presented in origin-destination (OD) matrices or OD tables, which simply show the shortest travel distances/times between source locations and target locations. Valhalla has an API called "sources_to_targets" to generate this information. The **valhallr** package has two functions that call this API: `valhallr::sources_to_targets()` calls it directly and provides fine-grained access to configuration options, and `valhallr::od_table()` provides a higher-level interface with several user-friendly features. We'll look at each function in turn.
+
+In this example, we need to find the shortest distances and times between three source locations (the Canadian parliament buildings, the University of Ottawa, and the CN Tower) and two destination locations (the Canadian Tire Centre in Ottawa, and Zwicks Island Park in Belleville).
+
+To create an OD table, we set up our sources in a tibble called `froms`, our targets in a tibble called `tos`, and then pass them to `sources_to_targets()` using all default options.
+
+
+```r
+library(dplyr)
+origins <- bind_rows(test_data("parliament"),
+                   test_data("uottawa"),
+                   test_data("cntower"))
+destinations <- bind_rows(test_data("cdntirecentre"),
+                   test_data("zwicksisland"))
+
+st <- sources_to_targets(froms = origins,
+                         tos = destinations,
+                         hostname = host,
+                         port = port)
+
+st %>%
+  knitr::kable()
+```
+
+
+
+| distance|  time| to_index| from_index|
+|--------:|-----:|--------:|----------:|
+|   29.498|  1232|        0|          0|
+|  273.969| 10170|        1|          0|
+|   28.693|  1194|        0|          1|
+|  273.164| 10131|        1|          1|
+|  389.276| 15963|        0|          2|
+|  190.912|  7189|        1|          2|
+
+`sources_to_targets()` returns results as they come from Valhalla, which has two disadvantages. First, it strips all human-readable names from the inputs and only returns zero-indexed identifiers. And second, the API call can fail for large requests with hundreds or thousands of locations if Valhalla runs out of memory.
+
+The `valhallr::od_table()` function addresses these two problems by letting you specify human-readable names for each location, and by letting you send origin rows to Valhalla in batches. The trade-off is that `od_table()` doesn't give as fine-grained access to the underlying API, but it's easier and faster for many purposes.
+
+Here we can see the results of calling `od_table()` with the same inputs as before, this time specifying the names of the human-readable id columns in each input tibble:
+
+
+```r
+od <- od_table (froms = origins,
+                from_id_col = "name",
+                tos = destinations,
+                to_id_col = "name",
+                hostname = host,
+                port = port)
+
+od %>%
+  knitr::kable()
+```
+
+
+
+|name_from  |name_to       | distance|  time|
+|:----------|:-------------|--------:|-----:|
+|parliament |cdntirecentre |   29.498|  1232|
+|parliament |zwicksisland  |  273.969| 10170|
+|uottawa    |cdntirecentre |   28.693|  1194|
+|uottawa    |zwicksisland  |  273.164| 10131|
+|cntower    |cdntirecentre |  389.276| 15963|
+|cntower    |zwicksisland  |  190.912|  7189|
+
+The results are much easier to read, and would be simpler to feed forward into a further analysis (e.g. by left-joining with the original inputs to get the lat/lon information for mapping).
+
+Although this example didn't use batching, note that this can be essential for larger analyses and seems especially important when using "pedestrian" costing. For some analyses I've been able to use a batch size of 100 for "auto" costing but have had to scale down to a batch size of 5 for "pedestrian" costing.
+
+# Isochrones
+
+Finally, **valhallr** provides access to Valhalla's isochrone API through the function `valhallr::isochrone()`. An isochrone, also known as a service area, is a polygon that shows the area reachable from a starting point by traveling along a road network for a certain distance or time. This function lets you provide a starting point's latitude and longitude, a distance or time metric, and a vector of distances/times, and if it's successful it returns an sf-class tibble of polygons.
+
+For example, how far can you get from downtown Kenora on a bicycle using the default values of 5, 10, and 15 minutes?
+
+
+```r
+# set up our departure point: the University of Ottawa
+origin <- test_data("kenora")
+
+# generate an isochrone for travel by bicycle
+i <- valhallr::isochrone(from = origin,
+                         costing = "bicycle",
+                         hostname = host,
+                         port = port)
+
+# map the isochrone
+map_isochrone(i, method = "ggplot")
+```
+
+<img src="valhallr-map_isochrone_kenora-1.jpeg" title="plot of chunk map_isochrone_kenora" alt="plot of chunk map_isochrone_kenora" width="100%" />
+
+Pretty far, by the looks of it! You can see how the isochrones follow the road network, and so give a reasonably realistic estimate of how far you could travel.
+
+For another example, how far can you drive from Sudbury's Big Nickel in 30, 60, and 90 minutes?
+
+
+```r
+origin <- test_data("bignickel")
+
+i <- valhallr::isochrone(from = origin,
+                         costing = "auto",
+                         contours = c(30,60,90),
+                         metric = "min",
+                         hostname = host,
+                         port = port)
+
+map_isochrone(i, method = "ggplot")
+```
+
+<img src="valhallr-map_isochrone_sudbury-1.jpeg" title="plot of chunk map_isochrone_sudbury" alt="plot of chunk map_isochrone_sudbury" width="100%" />
+
+Again, quite far! You can see how the algorithm takes the road network and speed limits into account: once you get onto a major highway, the distances increase rapidly.
+
+# Final thoughts
+
+I'm pretty excited about this, since I see wide applications for both academic research and more commercial applications. I'll be pulling some demo analyses together soon. Let me know if you use this to do anything cool! (Or if you find any bugs..)

@@ -1,0 +1,273 @@
+---
+title: 'valhallr: An R Interface to the Valhalla Routing Engine'
+author: Christopher Belanger
+date: '2021-03-05'
+slug: []
+categories: []
+tags:
+  - RStats
+  - geospatial
+  - cran
+subtitle: ''
+summary: "The 'valhallr' package provides an R interface to the Valhalla routing engine--the same one Tesla uses in its cars. This post introduces the package and demonstrates how to use it to generate turn-by-turn directions, origin-destination analyses, and isochrones."
+authors: []
+lastmod: '2021-03-05T14:57:22-05:00'
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: no
+projects: []
+---
+
+<script src="/rmarkdown-libs/header-attrs/header-attrs.js"></script>
+<script src="/rmarkdown-libs/htmlwidgets/htmlwidgets.js"></script>
+<script src="/rmarkdown-libs/jquery/jquery.min.js"></script>
+<link href="/rmarkdown-libs/leaflet/leaflet.css" rel="stylesheet" />
+<script src="/rmarkdown-libs/leaflet/leaflet.js"></script>
+<link href="/rmarkdown-libs/leafletfix/leafletfix.css" rel="stylesheet" />
+<script src="/rmarkdown-libs/proj4/proj4.min.js"></script>
+<script src="/rmarkdown-libs/Proj4Leaflet/proj4leaflet.js"></script>
+<link href="/rmarkdown-libs/rstudio_leaflet/rstudio_leaflet.css" rel="stylesheet" />
+<script src="/rmarkdown-libs/leaflet-binding/leaflet.js"></script>
+
+
+<div id="introducing-the-valhallr-package" class="section level1">
+<h1>Introducing the ‘valhallr’ package!</h1>
+<p>I’m excited to announce that my new R package <strong>valhallr</strong> is now available on CRAN, and can be installed simply by typing <code>install.packages("valhallr")</code>! I’m looking forward to seeing what people do with it (and receiving bug reports), but in this quick post I’ll outline the why, the what, and the how.</p>
+<p>As a top-line demo, though, this image shows how far you can walk from the University of Ottawa Campus in 5 minutes, 10 minutes, and 15 minutes. valhallr lets you generate analyses like this with just a few lines of R code.</p>
+<pre class="r"><code>library(valhallr)
+origin &lt;- test_data(&quot;uottawa&quot;)
+i &lt;- isochrone(from = origin)
+map_isochrone(i)</code></pre>
+<div id="htmlwidget-1" style="width:672px;height:480px;" class="leaflet html-widget"></div>
+<script type="application/json" data-for="htmlwidget-1">{"x":{"options":{"crs":{"crsClass":"L.CRS.EPSG3857","code":null,"proj4def":null,"projectedBounds":null,"options":{}}},"calls":[{"method":"addTiles","args":["//{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",null,null,{"minZoom":0,"maxZoom":18,"tileSize":256,"subdomains":"abc","errorTileUrl":"","tms":false,"noWrap":false,"zoomOffset":0,"zoomReverse":false,"opacity":1,"zIndex":1,"detectRetina":false,"attribution":"&copy; <a href=\"http://openstreetmap.org\">OpenStreetMap<\/a> contributors, <a href=\"http://creativecommons.org/licenses/by-sa/2.0/\">CC-BY-SA<\/a>"}]},{"method":"addPolygons","args":[[[[{"lng":[-75.684156,-75.6742,-75.6722,-75.670331,-75.671668,-75.670873,-75.671152,-75.6742,-75.675047,-75.6772,-75.676518,-75.6782,-75.6792,-75.68088,-75.682032,-75.682509,-75.6882,-75.696797,-75.696023,-75.696218,-75.6952,-75.694052,-75.691502,-75.6882,-75.685189,-75.684156],"lat":[45.432444,45.430585,45.429851,45.4264,45.4194,45.4184,45.417352,45.416698,45.417553,45.41755,45.4164,45.414594,45.414838,45.4144,45.414568,45.416091,45.416614,45.4194,45.4234,45.425418,45.42687,45.4274,45.432702,45.433366,45.432389,45.432444]}]],[[{"lng":[-75.683103,-75.677268,-75.674409,-75.673956,-75.675203,-75.677502,-75.67589,-75.676046,-75.676851,-75.6782,-75.6792,-75.6802,-75.680849,-75.682654,-75.6832,-75.6862,-75.6872,-75.6912,-75.692298,-75.691011,-75.688986,-75.6862,-75.683103],"lat":[45.429497,45.428332,45.427191,45.426644,45.4214,45.4204,45.4194,45.4184,45.418051,45.417797,45.418329,45.417928,45.418751,45.418946,45.419417,45.419184,45.42141,45.420832,45.4214,45.4254,45.4294,45.430031,45.429497]}]],[[{"lng":[-75.681181,-75.6802,-75.678268,-75.679331,-75.6802,-75.6842,-75.684851,-75.687668,-75.686327,-75.6842,-75.681181],"lat":[45.426419,45.425712,45.425332,45.4214,45.42021,45.420896,45.421749,45.4234,45.426527,45.426888,45.426419]}]]],null,null,{"interactive":true,"className":"","stroke":true,"color":"#03F","weight":5,"opacity":0.5,"fill":true,"fillColor":["#bf4040","#bfaa40","#6abf40"],"fillOpacity":0.2,"smoothFactor":1,"noClip":false},null,null,["15 Minutes Walking","10 Minutes Walking","5 Minutes Walking"],{"interactive":false,"permanent":false,"direction":"auto","opacity":1,"offset":[0,0],"textsize":"10px","textOnly":false,"className":"","sticky":true},null]}],"limits":{"lat":[45.4144,45.433366],"lng":[-75.696797,-75.670331]}},"evals":[],"jsHooks":[]}</script>
+<p><img src="/post/2021-03-05-valhallr-an-r-interface-to-the-valhalla-routing-engine_files/figure-html/unnamed-chunk-2-2.png" width="672" /></p>
+</div>
+<div id="why-valhalla-why-valhallr" class="section level1">
+<h1>Why Valhalla? Why valhallr?</h1>
+<p>Valhalla is a fast and effective open-source routing engine that can give detailed walking, cycling, and driving directions using road information from OpenStreetMaps. If you’ve ever used Google Maps to figure out how to get from A to B, Valhalla is just like that except you can download it and run it on your own computer. Apparently it’s also the software <a href="https://insideevs.com/news/333797/tesla-turns-to-open-sourcing-for-updates-to-mapping-platform/">Tesla uses as its in-car navigation</a>.</p>
+<p>If you’re wondering why you’d want to run your own routing engine, consider this health-access analysis we’re doing through the <a href="https://www.neighbourhoodstudy.ca/">Ottawa Neighbourhood Study</a>. Imagine you wanted to find the average travel distance between each of Ottawa’s roughly 8,000 city blocks and its nearly 1,000 family physicians: that’s roughly 8 million trips. It would take, um, a bit too long to type each of those into Google Maps one by one, and it would be pretty expensive to run this analysis using Google’s commercial option.</p>
+<p>With Valhalla you can run the analysis as often as you want, with only the cost of the time it takes to get things running. And with <strong>valhallr</strong>, you can automate your analysis and analyze all the data from within the comfort of your R IDE.</p>
+</div>
+<div id="step-0-install-and-run-valhalla" class="section level1">
+<h1>Step 0: Install and run Valhalla</h1>
+<p>This package provides an R-native interface to the Valhalla routing engine, and assumes that you have access to a running Valhalla instance. If you don’t, you won’t be able to use any of the functions described in this post! Valhalla is open source, and here are some resources that I found helpful:</p>
+<ul>
+<li><a href="https://github.com/valhalla/">Valhalla’s GitHub page</a></li>
+<li><a href="https://valhalla.readthedocs.io/en/latest/">Valhalla’s API documentation</a></li>
+<li><a href="https://gis-ops.com/valhalla-part-1-how-to-install-on-ubuntu/">GIS-OPS’s helpful guide for installing Valhalla</a></li>
+</ul>
+<p>The rest of this post assumes a running Valhalla instance on localhost at the default port 8002.</p>
+</div>
+<div id="load-the-package-and-point-it-to-valhalla" class="section level1">
+<h1>Load the package and point it to Valhalla</h1>
+<p>Once you have access to Valhalla, you’re ready to start. The package lets you specify any hostname/IP address and port, but as a default it looks at port 8002 on “localhost”. Here we’ll set the hostname and port manually to make it
+clear.</p>
+<pre class="r"><code>library(valhallr)
+host &lt;- &quot;localhost&quot;
+port &lt;- 8002</code></pre>
+</div>
+<div id="turn-by-turn-routing" class="section level1">
+<h1>Turn-by-turn routing</h1>
+<p>The function <code>valhallr::route()</code> uses Valhalla to generate detailed turn-by-turn routing from an origin to a destination. It’s straightforward to use: you provide origin and destination coordinates in tibbles with <code>lat</code> and <code>lon</code> columns, along with any number of optional options, and the API returns an object containing the resulting trip.</p>
+<p>This example shows how to generate driving directions between the University of Ottawa and the Canadian Tire Centre, a stadium in Ottawa. It gets these coordinates from the function <code>valhallr::test_data()</code>, which can return coordinates for several points of interest around Ontario. It then calls <code>valhallr::route()</code> between these two locations with all default options, and then passes the result to <code>valhallr::print_trip()</code>.</p>
+<pre class="r"><code>origin &lt;- test_data(&quot;uottawa&quot;)
+destination &lt;- test_data(&quot;cdntirecentre&quot;)
+t &lt;- route(from = origin,
+           to = destination,
+           hostname = host,
+           port = port)
+
+print_trip(t)</code></pre>
+<p><code>From lat/lng: 45.4234, -75.6832</code><br>
+<code>To   lat/lng: 45.2975, -75.9279</code><br>
+<code>Time: 19.9 minutes</code><br>
+<code>Dist: 28.693 km</code></p>
+<p>We can see that Valhalla has generated a trip from uOttawa to the Canadian Tire Centre that’s 28.693km long and would take 19.9 minutes to drive. But what does the trip look like?</p>
+<p>We can answer this question with the function <code>valhallr::map_trip()</code> that takes the Valhalla trip object, decodes an embedded shapefile, and plots the result on a map. (You can use <code>valhallr::decode()</code> to extract the shapefile yourself for other purposes.) The <code>map_trip()</code> function supports an interactive map using <strong>leaflet</strong> or an static map using <strong>ggplot2</strong>. Here we’ll generate a static map.</p>
+<pre class="r"><code>map_trip(t, method = &quot;ggplot&quot;)</code></pre>
+<p><img src="valhallr-map_ottawa_auto-1.jpeg" title="plot of chunk map_ottawa_auto" alt="plot of chunk map_ottawa_auto" width="100%" /></p>
+<p>What if we wanted to travel by bicycle instead? We can change our travel method from the default, “auto”, using the <code>costing</code> parameter. Here we set it to “bicycle” and re-run the command:</p>
+<pre class="r"><code>t &lt;- route(from = origin,
+           to = destination,
+           costing = &quot;bicycle&quot;,
+           hostname = host,
+           port = port)
+
+print_trip(t)</code></pre>
+<p>Here’s the output:</p>
+<p><code>From lat/lng: 45.4234, -75.6832</code><br>
+<code>To   lat/lng: 45.2975, -75.9279</code><br>
+<code>Time: 108 minutes</code><br>
+<code>Dist: 30.028 km</code></p>
+<p>This new trip is a bit longer at 30.028km, and would take quite a bit longer at 108 minutes. When we map it, we can see that Valhalla has given us a plausible cycling trip that takes a scenic route along the riverside path and avoids major highways:</p>
+<pre class="r"><code>map_trip(t, method = &quot;ggplot&quot;)</code></pre>
+<p><img src="valhallr-map_ottawa_bicycle-1.jpeg" title="plot of chunk map_ottawa_bicycle" alt="plot of chunk map_ottawa_bicycle" width="100%" /></p>
+<p>The turn-by-turn routing information, along with a lot of other feedback from Valhalla, is all included in the response as well.</p>
+</div>
+<div id="origin-destination-analyses" class="section level1">
+<h1>Origin-destination analyses</h1>
+<p>Many analyses require the shortest distance or time between a large number of locations without needing to know the specific routes taken. Sometimes this information is presented in origin-destination (OD) matrices or OD tables, which simply show the shortest travel distances/times between source locations and target locations. Valhalla has an API called “sources_to_targets” to generate this information. The <strong>valhallr</strong> package has two functions that call this API: <code>valhallr::sources_to_targets()</code> calls it directly and provides fine-grained access to configuration options, and <code>valhallr::od_table()</code> provides a higher-level interface with several user-friendly features. We’ll look at each function in turn.</p>
+<p>In this example, we need to find the shortest distances and times between three source locations (the Canadian parliament buildings, the University of Ottawa, and the CN Tower) and two destination locations (the Canadian Tire Centre in Ottawa, and Zwicks Island Park in Belleville).</p>
+<p>To create an OD table, we set up our sources in a tibble called <code>froms</code>, our targets in a tibble called <code>tos</code>, and then pass them to <code>sources_to_targets()</code> using all default options.</p>
+<pre class="r"><code>library(dplyr)
+origins &lt;- bind_rows(test_data(&quot;parliament&quot;),
+                   test_data(&quot;uottawa&quot;),
+                   test_data(&quot;cntower&quot;))
+destinations &lt;- bind_rows(test_data(&quot;cdntirecentre&quot;),
+                   test_data(&quot;zwicksisland&quot;))
+
+st &lt;- sources_to_targets(froms = origins,
+                         tos = destinations,
+                         hostname = host,
+                         port = port)
+
+st %&gt;%
+  knitr::kable()</code></pre>
+<table>
+<thead>
+<tr class="header">
+<th align="right">distance</th>
+<th align="right">time</th>
+<th align="right">to_index</th>
+<th align="right">from_index</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="right">29.498</td>
+<td align="right">1232</td>
+<td align="right">0</td>
+<td align="right">0</td>
+</tr>
+<tr class="even">
+<td align="right">273.969</td>
+<td align="right">10170</td>
+<td align="right">1</td>
+<td align="right">0</td>
+</tr>
+<tr class="odd">
+<td align="right">28.693</td>
+<td align="right">1194</td>
+<td align="right">0</td>
+<td align="right">1</td>
+</tr>
+<tr class="even">
+<td align="right">273.164</td>
+<td align="right">10131</td>
+<td align="right">1</td>
+<td align="right">1</td>
+</tr>
+<tr class="odd">
+<td align="right">389.276</td>
+<td align="right">15963</td>
+<td align="right">0</td>
+<td align="right">2</td>
+</tr>
+<tr class="even">
+<td align="right">190.912</td>
+<td align="right">7189</td>
+<td align="right">1</td>
+<td align="right">2</td>
+</tr>
+</tbody>
+</table>
+<p><code>sources_to_targets()</code> returns results as they come from Valhalla, which has two disadvantages. First, it strips all human-readable names from the inputs and only returns zero-indexed identifiers. And second, the API call can fail for large requests with hundreds or thousands of locations if Valhalla runs out of memory.</p>
+<p>The <code>valhallr::od_table()</code> function addresses these two problems by letting you specify human-readable names for each location, and by letting you send origin rows to Valhalla in batches. The trade-off is that <code>od_table()</code> doesn’t give as fine-grained access to the underlying API, but it’s easier and faster for many purposes.</p>
+<p>Here we can see the results of calling <code>od_table()</code> with the same inputs as before, this time specifying the names of the human-readable id columns in each input tibble:</p>
+<pre class="r"><code>od &lt;- od_table (froms = origins,
+                from_id_col = &quot;name&quot;,
+                tos = destinations,
+                to_id_col = &quot;name&quot;,
+                hostname = host,
+                port = port)
+
+od %&gt;%
+  knitr::kable()</code></pre>
+<table>
+<thead>
+<tr class="header">
+<th align="left">name_from</th>
+<th align="left">name_to</th>
+<th align="right">distance</th>
+<th align="right">time</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">parliament</td>
+<td align="left">cdntirecentre</td>
+<td align="right">29.498</td>
+<td align="right">1232</td>
+</tr>
+<tr class="even">
+<td align="left">parliament</td>
+<td align="left">zwicksisland</td>
+<td align="right">273.969</td>
+<td align="right">10170</td>
+</tr>
+<tr class="odd">
+<td align="left">uottawa</td>
+<td align="left">cdntirecentre</td>
+<td align="right">28.693</td>
+<td align="right">1194</td>
+</tr>
+<tr class="even">
+<td align="left">uottawa</td>
+<td align="left">zwicksisland</td>
+<td align="right">273.164</td>
+<td align="right">10131</td>
+</tr>
+<tr class="odd">
+<td align="left">cntower</td>
+<td align="left">cdntirecentre</td>
+<td align="right">389.276</td>
+<td align="right">15963</td>
+</tr>
+<tr class="even">
+<td align="left">cntower</td>
+<td align="left">zwicksisland</td>
+<td align="right">190.912</td>
+<td align="right">7189</td>
+</tr>
+</tbody>
+</table>
+<p>The results are much easier to read, and would be simpler to feed forward into a further analysis (e.g. by left-joining with the original inputs to get the lat/lon information for mapping).</p>
+<p>Although this example didn’t use batching, note that this can be essential for larger analyses and seems especially important when using “pedestrian” costing. For some analyses I’ve been able to use a batch size of 100 for “auto” costing but have had to scale down to a batch size of 5 for “pedestrian” costing.</p>
+</div>
+<div id="isochrones" class="section level1">
+<h1>Isochrones</h1>
+<p>Finally, <strong>valhallr</strong> provides access to Valhalla’s isochrone API through the function <code>valhallr::isochrone()</code>. An isochrone, also known as a service area, is a polygon that shows the area reachable from a starting point by traveling along a road network for a certain distance or time. This function lets you provide a starting point’s latitude and longitude, a distance or time metric, and a vector of distances/times, and if it’s successful it returns an sf-class tibble of polygons.</p>
+<p>For example, how far can you get from downtown Kenora on a bicycle using the default values of 5, 10, and 15 minutes?</p>
+<pre class="r"><code># set up our departure point: the University of Ottawa
+origin &lt;- test_data(&quot;kenora&quot;)
+
+# generate an isochrone for travel by bicycle
+i &lt;- valhallr::isochrone(from = origin,
+                         costing = &quot;bicycle&quot;,
+                         hostname = host,
+                         port = port)
+
+# map the isochrone
+map_isochrone(i, method = &quot;ggplot&quot;)</code></pre>
+<p><img src="valhallr-map_isochrone_kenora-1.jpeg" title="plot of chunk map_isochrone_kenora" alt="plot of chunk map_isochrone_kenora" width="100%" /></p>
+<p>Pretty far, by the looks of it! You can see how the isochrones follow the road network, and so give a reasonably realistic estimate of how far you could travel.</p>
+<p>For another example, how far can you drive from Sudbury’s Big Nickel in 30, 60, and 90 minutes?</p>
+<pre class="r"><code>origin &lt;- test_data(&quot;bignickel&quot;)
+
+i &lt;- valhallr::isochrone(from = origin,
+                         costing = &quot;auto&quot;,
+                         contours = c(30,60,90),
+                         metric = &quot;min&quot;,
+                         hostname = host,
+                         port = port)
+
+map_isochrone(i, method = &quot;ggplot&quot;)</code></pre>
+<p><img src="valhallr-map_isochrone_sudbury-1.jpeg" title="plot of chunk map_isochrone_sudbury" alt="plot of chunk map_isochrone_sudbury" width="100%" /></p>
+<p>Again, quite far! You can see how the algorithm takes the road network and speed limits into account: once you get onto a major highway, the distances increase rapidly.</p>
+</div>
+<div id="final-thoughts" class="section level1">
+<h1>Final thoughts</h1>
+<p>I’m pretty excited about this, since I see wide applications for both academic research and more commercial applications. I’ll be pulling some demo analyses together soon. Let me know if you use this to do anything cool! (Or if you find any bugs..)</p>
+</div>
