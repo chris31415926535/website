@@ -1,0 +1,226 @@
+---
+title: Scraping Dynamic Web Sites with API Interception using R
+author: Christopher Belanger
+date: '2021-05-19'
+slug: scraping-dynamic-web-sites-with-api-interception
+categories: []
+tags:
+  - scraping
+  - api
+subtitle: ''
+summary: ''
+authors: []
+lastmod: '2021-05-19T13:54:28-04:00'
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: no
+projects: []
+---
+
+<script src="/rmarkdown-libs/header-attrs/header-attrs.js"></script>
+<script src="/rmarkdown-libs/htmlwidgets/htmlwidgets.js"></script>
+<script src="/rmarkdown-libs/plotly-binding/plotly.js"></script>
+<script src="/rmarkdown-libs/typedarray/typedarray.min.js"></script>
+<script src="/rmarkdown-libs/jquery/jquery.min.js"></script>
+<link href="/rmarkdown-libs/crosstalk/css/crosstalk.css" rel="stylesheet" />
+<script src="/rmarkdown-libs/crosstalk/js/crosstalk.min.js"></script>
+<link href="/rmarkdown-libs/plotly-htmlwidgets-css/plotly-htmlwidgets.css" rel="stylesheet" />
+<script src="/rmarkdown-libs/plotly-main/plotly-latest.min.js"></script>
+
+
+<div id="api-interception-in-r" class="section level1">
+<h1>API Interception in R</h1>
+<p>It can be a major pain to scrape dynamic web pages that load more information as you scroll down or click buttons. Often you’ll need to use something like Selenium to control a browser that loads the page, mimicks a bunch of key presses or button pushes, and then uses css selectors to extract the loaded data. Wouldn’t it be nice if we could get that data directly in structured <code>json</code>? It might sound like magic, but in this post I’ll introduce a technique called <strong>API interception</strong> and show how we can use it to scrape some modern dynamic websites quickly and easily, using the <a href="https://news.ontario.ca/en">Government of Ontario Newsroom</a> as a case study. Then we’ll use this new dataset to answer a simple question: is there any evidence that more news releases come out later in the week, in a “Friday news dump?”</p>
+<p>If all you need is the facts, here are the four steps to scraping a dynamic client-side site using API interception:</p>
+<ol style="list-style-type: decimal">
+<li><strong>Use the Google developer console to monitor Chrome’s network activity and find the relevant API call(s).</strong></li>
+<li><strong>Reverse-engineer the API calls to find out how to ask for the data you want.</strong></li>
+<li><strong>Make the API calls and store the results, using loops or other techniques as appropriate.</strong></li>
+<li><strong>Tidy the results.</strong></li>
+</ol>
+<p>When it works, it feels a bit like this:</p>
+<p><img src="/img/2021-05-19/neo-morpheus-edited.jpg" /></p>
+<p>I’m sure other people are using this technique but I haven’t seen it described elsewhere, so I guess this counts as “original research.” Consequently, any errors are mine alone!</p>
+<div id="three-kinds-of-websites" class="section level2">
+<h2>Three Kinds of Websites</h2>
+<p>First we need to distinguish between three types of websites: <strong>static</strong>, <strong>dynamic server-side</strong>, and <strong>dynamic client-side</strong>. Each site types needs a different web-scraping approach, which we’ll discuss using a strained metaphor based on men’s fashion.</p>
+<p><strong>Static sites</strong> are like off-the-rack suits: everyone gets the same thing. They consist of a bunch of static files (html, images, css, and so on) that live on a web server that your browser loads and interprets. For example, this blog is a static website rendered using <a href="https://bookdown.org/yihui/blogdown/">Blogdown</a> and <a href="https://gohugo.io/">Hugo.</a>. You can scrape static sites in R using <a href="https://github.com/tidyverse/rvest">rvest</a> to load and parse the sites, and <a href="https://chrome.google.com/webstore/detail/selectorgadget/mhjhnkcfbdhnjickkkdbjoemdmbfginb">Selector Gadget</a> to find the css or xpath for the features you’re interested in.</p>
+<p><strong>Dynamic server-side sites</strong> are like made-to-measure suits: they’re customized at the point of origin based on your needs and requests, and everyone gets something a bit different. The html is generated <em>dynamically</em> on a server, maybe using a programming language like <a href="https://gohugo.io/">php</a>, and then sent to your browser. You can scrape these sites using Selenium to load them in a browser and extract the data (<a href="/post/web-scraping-in-r-selenium-firefox-and-phantomjs/">see this blog post for details</a>).</p>
+<p><strong>Dynamic client-side sites</strong> are a bit like an outsourced made-to-measure suit, where the fabric is measured and cut somewhere else and then shipped to you to be sewn together. (The metaphor is now broken and will be discarded.) This means that the remote server sends structured information to <em>your browser</em>, which then builds a nice html file and shows to you. The idea behind API interception is that we can ask for the structured data ourselves, without the need to work backwards from the final html file. When it works, this can be very efficient.</p>
+</div>
+<div id="step-1-use-the-google-developer-console-to-find-the-api-calls" class="section level2">
+<h2>Step 1: Use the Google developer console to find the API call(s)</h2>
+<p>First, assuming you’re using Chrome on Windows, open the developer console by pressing <code>Ctrl-Shift-J</code>. A new frame should pop open. Within that frame, Click <em>Network</em> on the top bar and then <em>XHR</em> below that.<a href="#fn1" class="footnote-ref" id="fnref1"><sup>1</sup></a> Here’s an image with helpful and unmissable arrows:</p>
+<p><img src="/img/2021-05-19/chrome-dev-panel-open-arrows.png" /></p>
+<p>Now load the site you’re interested in: here I’ll be using the <a href="https://news.ontario.ca/en">Ontario Newsroom</a>. You should see a bunch of rows added to the developer console, like this:</p>
+<p><img src="/img/2021-05-19/chrome-dev-panel-xhr-box.png" /></p>
+<p>These are all the API calls that our browser made to Ontario’s severs to generate the web page we’re now looking at.</p>
+<p>Next we need to figure out which of these API calls we’re interested in. Some sites can have dozens, so this isn’t always easy. Sorting by size can be helpful, since bigger responses might mean more useful data. In the image above you can see that <code>featured?language=en</code> and <code>releases?language=en...</code> are both pretty big, so let’s focus on them.</p>
+<p>If you click an API call’s name Chrome will show more information, and you can click in the new sub-tab that opens up to get different views. We care mostly about <em>Headers</em>, <em>Preview</em>, and <em>Response</em>, and if we click on <em>Preview</em> Chrome will give us a structured view of the response. If we click on <code>featured?language=en</code>, and then on <em>Preview</em>, we get the following:</p>
+<p><img src="/img/2021-05-19/chrome-dev-panel-headers.png" /></p>
+<p>This looks very promising! The data on the right matches the featured release on the web page! So it looks like this API call gives us the current features press releases in a nice structured format: you can see that it gives us the text in <code>content_body</code>, the <code>release_date_time</code>, the <code>lead_ministry</code>, and a bunch of other stuff too. So if you wanted to make an app that shows the current top-priority government press releases, this is what you could use. <a href="https://api.news.ontario.ca/api/v1/featured?language=en">You can also view the results in your browser, although they’re a bit messy</a>.</p>
+<p>But we want to get as many news releases as we can, not just the featured ones, so we need to keep looking. Then next one, <code>releases</code>, looks like it might have what we’re looking for:</p>
+<p><img src="/img/2021-05-19/chrome-dev-panel-releases.png" /></p>
+<p>Yes! Here we see 10 responses under <code>data</code>, and if we click through we’ll find one entry for each of the 10 press releases loaded in our browser. Let’s also take note of that one line under <code>links</code> that says <code>last: "http://intra.....?page=3163</code>. Perhaps there are 3163 pages of results!</p>
+</div>
+<div id="step-2-reverse-engineer-the-api-calls" class="section level2">
+<h2>Step 2: Reverse-engineer the API calls</h2>
+<p>Now that we’ve found the right API call, the next step is to reverse-engineer it so that we can get the data we want. This is can be a tricky trial-and-error process. Sometimes you’ll need to navigate around a web page for a few minutes and track the API calls to figure out what’s going on, but the Ontario Newsroom API is straightforward. Let’s break it down:</p>
+<p><code>https://api.news.ontario.ca/api/v1/releases?language=en&amp;sort=desc&amp;limit=10&amp;page=1</code></p>
+<ul>
+<li><code>https://api.news.ontario.ca/api/v1/releases</code>: This is API endpoint, or web address. The question mark then tells the API that everything after that point is parameters.</li>
+<li><code>language=en</code>: We can pretty safely assume that this tells the API to give us results in English.</li>
+<li><code>sort=desc</code>: This seems like it’s telling the API to sort results in descending order, which might mean to put the most recent press releases first.</li>
+<li><code>limit=10</code>: There were 10 press releases on the web page, so this might tell the API how many results to return. This one’s interesting.</li>
+<li><code>page=1</code>: We’re on the first page of releases, so this might tell the API which releases to return. This one’s interesting too.</li>
+</ul>
+<p>At this point I’ll usually fire up RStudio and start querying the API with different parameters. With three lines of code, we can query the API and parse the results:</p>
+<pre class="r"><code>library(tidyverse)
+library(httr)
+
+response &lt;- httr::GET(url = &quot;https://api.news.ontario.ca/api/v1/releases?language=en&amp;sort=desc&amp;limit=10&amp;page=1&quot;)
+
+response_json &lt;- httr::content(response, type = &quot;application/json&quot;, encoding = &quot;UTF-8&quot;)</code></pre>
+<p>And it works!</p>
+<p><img src="/img/2021-05-19/rstudio-response-json.png" /></p>
+<p>But wouldn’t it be nice to get more than 10 at a time? Why not go for something bigger, like 500? It’s simple enough to try: just put <code>limit=500</code> in the API request:</p>
+<pre class="r"><code>response &lt;- httr::GET(url = &quot;https://api.news.ontario.ca/api/v1/releases?language=en&amp;sort=desc&amp;limit=500&amp;page=1&quot;)
+
+response_json &lt;- httr::content(response, type = &quot;application/json&quot;, encoding = &quot;UTF-8&quot;)</code></pre>
+<p><img src="/img/2021-05-19/rstudio-response-json-500.png" /></p>
+<p>And it also works! Some APIs will oblige but others will choke if you ask for too much at once, so you may need to experiment. I’m not sure if it’s better manners to make more requests that are smaller or fewer that are larger, but it’s easier for us to make fewer calls.</p>
+</div>
+<div id="step-3-call-the-api-and-store-the-results." class="section level2">
+<h2>Step 3: Call the API and store the results.</h2>
+<p>Now that we’ve found the API and we know how it works, we can use a simple loop to call it as many times as we need to. I’m going to store all the results verbatim in a list and parse them in step 4, but for simple results you could parse the results as you get them.</p>
+<p>I’ve checked the response metadata and it says there are 64 pages of 500 results each, so here we’ll call the API 64 times and save the results in a list.</p>
+<p><strong>Please be polite</strong> when calling these APIs, for example by including some built-in delays between calls so you don’t spam the host server. The <strong>rvest</strong> package authors have written some <a href="https://cran.r-project.org/web/packages/httr/vignettes/api-packages.html">best practices for API packages</a> and it’s a good idea to follow them as closely as possible.</p>
+<pre class="r"><code>results &lt;- list()
+
+for (i in 1:64){
+  message(paste0(i,&quot;/64&quot;))
+  url_i &lt;- paste0(&quot;https://api.news.ontario.ca/api/v1/releases?language=en&amp;sort=desc&amp;limit=500&amp;page=&quot;,i)
+  results[[i]] &lt;- httr::GET(url = url_i)
+  
+  Sys.sleep(1) # Pause politely
+}</code></pre>
+</div>
+<div id="step-4-tidy-the-data" class="section level2">
+<h2>Step 4: Tidy the Data</h2>
+<p>In this final step we parse the API’s responses and put them into a usable format. This is an art, not a science, but I like to use a <a href="https://vita.had.co.nz/papers/tidy-data.pdf">tidy format</a> whenever possible because it’s easy to work. I also try not to use nested tibbles for storage, so that my data is maximally shareable in <code>csv</code> files.</p>
+<p>If you do use a tidy unnested format, you’ll need to decide what to do with nested columns that contain lists of varying lengths. In this data set, some releases have no quotes and some have ten, and some have one topic and some have five. To keep it simple I’ve compressed them down into character vectors, but keeping enough structure that I can parse them back out into nested tibbles if I need to.</p>
+<p>This next code block does the wrangling and tidying:</p>
+<pre class="r"><code># This is where our results will go once we tidy them up.
+results_parsed &lt;- tibble::tibble()
+
+# A humble for-loop to parse each of our results.
+# This is definitely not memory optimized: I&#39;m using bind_rows() to add new data to old data.
+# If you have millions of rows you&#39;ll want to be smarter about this.
+for (i in 1:length(results)){
+  message(paste0(i,&quot;/&quot;,length(results)))
+  
+  # Get the i-th result
+  r &lt;- results[[i]] %&gt;%
+    httr::content(type = &quot;application/json&quot;, encoding = &quot;UTF-8&quot;)
+
+  # Wrangle it into a tidy format.
+  # This is long &amp; complex but I built it step by step, basically guessing and checking.
+  # Note: because we don&#39;t know how many quotations there are, I&#39;ve put that column into a json string.
+  result &lt;- r$data %&gt;% 
+    enframe() %&gt;%
+    mutate(value =  purrr::map(value, enframe)) %&gt;%
+    mutate(value = purrr::map(value, pivot_wider)) %&gt;%
+    unnest(value)  %&gt;%
+    mutate(topics = purrr::map(topics, function (x) purrr::map(x, pluck, &quot;label&quot;)) %&gt;% purrr::map(stringr::str_flatten, collapse = &quot; | &quot;) %&gt;%
+             unlist() ) %&gt;%
+    mutate(tags = purrr::map(tags, function (x) purrr::map(x, pluck, &quot;label&quot;)) %&gt;% purrr::map(stringr::str_flatten, collapse = &quot; | &quot;) %&gt;%
+             unlist() )%&gt;%
+    mutate(partner_ministries = purrr::map(partner_ministries, function (x) purrr::map(x, pluck, &quot;acronym&quot;)) %&gt;% purrr::map(stringr::str_flatten, collapse = &quot; | &quot;) %&gt;%
+             unlist() ) %&gt;%
+    mutate(quotes = purrr::map(quotes, jsonlite::toJSON)) %&gt;%
+    select(id, contacts, content_title, content_subtitle, content_lead, content_body, keywords, media_assets, ministry_id, ministry_acronym, ministry_name, partner_ministries, quotes, quickfacts, release_date_time, release_id_translated, release_type_id, release_type_label, release_crossreferences_resources, release_resources, slug, topics, distributed) %&gt;%
+    mutate(across(everything(), as.character))%&gt;%
+    mutate(across(everything(), function(x) if_else(x == &quot;NULL&quot;, &quot;&quot;, x)))
+  
+  results_parsed &lt;- bind_rows(results_parsed, result)
+} 
+
+write_csv(results_parsed, &quot;ontario_newsroom.csv&quot;)</code></pre>
+<p>And that’s it! It might seem silly to say, but <strong>don’t forget to save your results!</strong> You may want to save the tidy data as a <code>.csv</code> file and the original raw results in an <code>.RData</code> file in case you want to go back to it later.</p>
+</div>
+<div id="is-there-a-friday-afternoon-news-dump" class="section level2">
+<h2>Is There a Friday-Afternoon News Dump?</h2>
+<p>After all this work collecting data, I feel a strong need to answer a trivial question. So I ask: is there any truth to the idea of a “Friday afternoon news dump?” I’ve heard anecdotal suggestions that bad news tends to be announced late on a Friday when people are less likely to notice, but now we have a dataset of 31,649 news releases spanning nearly 15 years that we can use to take a look.</p>
+<p>First, let’s just look at the days of the week:</p>
+<pre class="r"><code>weekdays &lt;- results_parsed %&gt;%
+  select(release_date_time) %&gt;%
+  mutate(release_date_time = lubridate::ymd_hms(release_date_time)) %&gt;%
+  mutate(day_of_week = lubridate::wday(release_date_time, label = TRUE)) %&gt;%
+  group_by(day_of_week) %&gt;%
+  summarise(num = n())
+
+forplot &lt;- weekdays %&gt;%
+  ggplot(aes(x=day_of_week, 
+             y = num,
+             text = paste0(&quot;Weekday: &quot;, day_of_week,
+                           &quot;\nCount: &quot;, num))) +
+  geom_col(fill = &quot;#123456&quot;) +
+  theme_minimal()  +
+  labs(title = &quot;Ontario Press Releases, July 2007 - May 2021&quot;,
+       subtitle = &quot;Grouped by Day of the Week&quot;,
+    x = &quot;Day of Week&quot;,
+       y = &quot;# of Releases&quot;)
+
+plotly::ggplotly(forplot, tooltip = c(&quot;text&quot;)) </code></pre>
+<div id="htmlwidget-1" style="width:672px;height:480px;" class="plotly html-widget"></div>
+<script type="application/json" data-for="htmlwidget-1">{"x":{"data":[{"orientation":"v","width":[0.9,0.9,0.9,0.9,0.9,0.9,0.9],"base":[0,0,0,0,0,0,0],"x":[1,2,3,4,5,6,7],"y":[562,5400,5638,6051,6526,7038,434],"text":["Weekday: Sun<br />Count: 562","Weekday: Mon<br />Count: 5400","Weekday: Tue<br />Count: 5638","Weekday: Wed<br />Count: 6051","Weekday: Thu<br />Count: 6526","Weekday: Fri<br />Count: 7038","Weekday: Sat<br />Count: 434"],"type":"bar","marker":{"autocolorscale":false,"color":"rgba(18,52,86,1)","line":{"width":1.88976377952756,"color":"transparent"}},"showlegend":false,"xaxis":"x","yaxis":"y","hoverinfo":"text","frame":null}],"layout":{"margin":{"t":43.7625570776256,"r":7.30593607305936,"b":40.1826484018265,"l":48.9497716894977},"font":{"color":"rgba(0,0,0,1)","family":"","size":14.6118721461187},"title":{"text":"Ontario Press Releases, July 2007 - May 2021","font":{"color":"rgba(0,0,0,1)","family":"","size":17.5342465753425},"x":0,"xref":"paper"},"xaxis":{"domain":[0,1],"automargin":true,"type":"linear","autorange":false,"range":[0.4,7.6],"tickmode":"array","ticktext":["Sun","Mon","Tue","Wed","Thu","Fri","Sat"],"tickvals":[1,2,3,4,5,6,7],"categoryorder":"array","categoryarray":["Sun","Mon","Tue","Wed","Thu","Fri","Sat"],"nticks":null,"ticks":"","tickcolor":null,"ticklen":3.65296803652968,"tickwidth":0,"showticklabels":true,"tickfont":{"color":"rgba(77,77,77,1)","family":"","size":11.689497716895},"tickangle":-0,"showline":false,"linecolor":null,"linewidth":0,"showgrid":true,"gridcolor":"rgba(235,235,235,1)","gridwidth":0.66417600664176,"zeroline":false,"anchor":"y","title":{"text":"Day of Week","font":{"color":"rgba(0,0,0,1)","family":"","size":14.6118721461187}},"hoverformat":".2f"},"yaxis":{"domain":[0,1],"automargin":true,"type":"linear","autorange":false,"range":[-351.9,7389.9],"tickmode":"array","ticktext":["0","2000","4000","6000"],"tickvals":[0,2000,4000,6000],"categoryorder":"array","categoryarray":["0","2000","4000","6000"],"nticks":null,"ticks":"","tickcolor":null,"ticklen":3.65296803652968,"tickwidth":0,"showticklabels":true,"tickfont":{"color":"rgba(77,77,77,1)","family":"","size":11.689497716895},"tickangle":-0,"showline":false,"linecolor":null,"linewidth":0,"showgrid":true,"gridcolor":"rgba(235,235,235,1)","gridwidth":0.66417600664176,"zeroline":false,"anchor":"x","title":{"text":"# of Releases","font":{"color":"rgba(0,0,0,1)","family":"","size":14.6118721461187}},"hoverformat":".2f"},"shapes":[{"type":"rect","fillcolor":null,"line":{"color":null,"width":0,"linetype":[]},"yref":"paper","xref":"paper","x0":0,"x1":1,"y0":0,"y1":1}],"showlegend":false,"legend":{"bgcolor":null,"bordercolor":null,"borderwidth":0,"font":{"color":"rgba(0,0,0,1)","family":"","size":11.689497716895}},"hovermode":"closest","barmode":"relative"},"config":{"doubleClick":"reset","showSendToCloud":false},"source":"A","attrs":{"95b0405d3a1f":{"x":{},"y":{},"text":{},"type":"bar"}},"cur_data":"95b0405d3a1f","visdat":{"95b0405d3a1f":["function (y) ","x"]},"highlight":{"on":"plotly_click","persistent":false,"dynamic":false,"selectize":false,"opacityDim":0.2,"selected":{"opacity":1},"debounce":0},"shinyEvents":["plotly_hover","plotly_click","plotly_selected","plotly_relayout","plotly_brushed","plotly_brushing","plotly_clickannotation","plotly_doubleclick","plotly_deselect","plotly_afterplot","plotly_sunburstclick"],"base_url":"https://plot.ly"},"evals":[],"jsHooks":[]}</script>
+<p>It’s not an overwhelming “dump,” but it does look like more news releases come out later in the week.</p>
+<p>This still doesn’t answer our question though, because we wanted to know if more releases come out on Friday <em>afternoon</em>. The next plot shows the percentage of daily press releases that were issued at each hour of the day for each day of the week. To keep it simple I’ve removed releases that didn’t specify a time (otherwise they showed up at midnight, 0 o’clock), and removed Saturday and Sunday to keep it simple.</p>
+<pre class="r"><code>weekdays_hours &lt;- results_parsed %&gt;%
+  select(release_date_time) %&gt;%
+  mutate(release_date_time = lubridate::ymd_hms(release_date_time)) %&gt;%
+  mutate(day_of_week = lubridate::wday(release_date_time, label = TRUE),
+         hour = lubridate::hour(release_date_time)) %&gt;% 
+  filter (hour &gt; 0) %&gt;%
+  group_by(day_of_week, hour) %&gt;%
+  summarise(num = n())
+
+forplot &lt;- weekdays_hours %&gt;%
+  filter(!day_of_week %in% c(&quot;Sat&quot;, &quot;Sun&quot;) ) %&gt;%
+  group_by(day_of_week) %&gt;%
+  mutate(pct = num / sum(num)) %&gt;%
+  ggplot(aes(x=hour, 
+             y = pct,
+             fill = day_of_week,
+             text = paste0(&quot;Weekday: &quot;, day_of_week,
+                           &quot;\nHour: &quot;, hour,
+                           &quot;\nPercent: &quot;, (round(pct, digits = 3) * 100) ,&quot;%&quot;))) +
+  geom_col(position = &quot;dodge&quot;) +
+  theme_minimal()  +
+  labs(title = &quot;Ontario Press Releases, July 2007 - May 2021&quot;,
+    x = &quot;Hour of the Day&quot;,
+       y = &quot;% of Releases&quot;,
+    fill = &quot;Weekday&quot;) +
+  scale_y_continuous(label = scales::percent)
+
+plotly::ggplotly(forplot, tooltip = c(&quot;text&quot;))</code></pre>
+<div id="htmlwidget-2" style="width:672px;height:480px;" class="plotly html-widget"></div>
+<script type="application/json" data-for="htmlwidget-2">{"x":{"data":[{"orientation":"v","width":[0.18,0.18,0.18,0.18,0.18,0.18,0.18,0.18,0.18,0.18,0.18,0.18,0.18,0.18,0.18,0.18,0.18,0.18,0.18,0.18,0.225000000000001],"base":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],"x":[0.64,1.64,4.64,5.64,6.64,7.64,8.64,9.64,10.64,11.64,12.64,13.64,14.64,15.64,16.64,17.64,18.64,19.64,20.64,21.64,22.6625],"y":[0.00078781512605042,0.000525210084033613,0.00210084033613445,0.0112920168067227,0.0183823529411765,0.0304621848739496,0.122899159663866,0.138918067226891,0.123949579831933,0.0727415966386555,0.125525210084034,0.138392857142857,0.0961134453781513,0.0667016806722689,0.0259978991596639,0.0112920168067227,0.00551470588235294,0.00446428571428571,0.00183823529411765,0.00183823529411765,0.000262605042016807],"text":["Weekday: Mon<br />Hour: 1<br />Percent: 0.1%","Weekday: Mon<br />Hour: 2<br />Percent: 0.1%","Weekday: Mon<br />Hour: 5<br />Percent: 0.2%","Weekday: Mon<br />Hour: 6<br />Percent: 1.1%","Weekday: Mon<br />Hour: 7<br />Percent: 1.8%","Weekday: Mon<br />Hour: 8<br />Percent: 3%","Weekday: Mon<br />Hour: 9<br />Percent: 12.3%","Weekday: Mon<br />Hour: 10<br />Percent: 13.9%","Weekday: Mon<br />Hour: 11<br />Percent: 12.4%","Weekday: Mon<br />Hour: 12<br />Percent: 7.3%","Weekday: Mon<br />Hour: 13<br />Percent: 12.6%","Weekday: Mon<br />Hour: 14<br />Percent: 13.8%","Weekday: Mon<br />Hour: 15<br />Percent: 9.6%","Weekday: Mon<br />Hour: 16<br />Percent: 6.7%","Weekday: Mon<br />Hour: 17<br />Percent: 2.6%","Weekday: Mon<br />Hour: 18<br />Percent: 1.1%","Weekday: Mon<br />Hour: 19<br />Percent: 0.6%","Weekday: Mon<br />Hour: 20<br />Percent: 0.4%","Weekday: Mon<br />Hour: 21<br />Percent: 0.2%","Weekday: Mon<br />Hour: 22<br />Percent: 0.2%","Weekday: Mon<br />Hour: 23<br />Percent: 0%"],"type":"bar","marker":{"autocolorscale":false,"color":"rgba(68,1,84,1)","line":{"width":1.88976377952756,"color":"transparent"}},"name":"Mon","legendgroup":"Mon","showlegend":true,"xaxis":"x","yaxis":"y","hoverinfo":"text","frame":null},{"orientation":"v","width":[0.18,0.18,0.18,0.18,0.18,0.18,0.18,0.18,0.18,0.18,0.18,0.18,0.18,0.18,0.18,0.18,0.18,0.18,0.18,0.18],"base":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],"x":[0.82,1.82,4.82,5.82,6.82,7.82,8.82,9.82,10.82,11.82,12.82,13.82,14.82,15.82,16.82,17.82,18.82,19.82,20.82,21.82],"y":[0.000486854917234664,0.000730282375851996,0.00267770204479065,0.00778967867575463,0.0214216163583252,0.0253164556962025,0.114167478091529,0.153359298928919,0.127069133398247,0.0847127555988316,0.108812074001947,0.125608568646543,0.10856864654333,0.0654819863680623,0.0284810126582278,0.0126582278481013,0.00632911392405063,0.00340798442064265,0.00243427458617332,0.000486854917234664],"text":["Weekday: Tue<br />Hour: 1<br />Percent: 0%","Weekday: Tue<br />Hour: 2<br />Percent: 0.1%","Weekday: Tue<br />Hour: 5<br />Percent: 0.3%","Weekday: Tue<br />Hour: 6<br />Percent: 0.8%","Weekday: Tue<br />Hour: 7<br />Percent: 2.1%","Weekday: Tue<br />Hour: 8<br />Percent: 2.5%","Weekday: Tue<br />Hour: 9<br />Percent: 11.4%","Weekday: Tue<br />Hour: 10<br />Percent: 15.3%","Weekday: Tue<br />Hour: 11<br />Percent: 12.7%","Weekday: Tue<br />Hour: 12<br />Percent: 8.5%","Weekday: Tue<br />Hour: 13<br />Percent: 10.9%","Weekday: Tue<br />Hour: 14<br />Percent: 12.6%","Weekday: Tue<br />Hour: 15<br />Percent: 10.9%","Weekday: Tue<br />Hour: 16<br />Percent: 6.5%","Weekday: Tue<br />Hour: 17<br />Percent: 2.8%","Weekday: Tue<br />Hour: 18<br />Percent: 1.3%","Weekday: Tue<br />Hour: 19<br />Percent: 0.6%","Weekday: Tue<br />Hour: 20<br />Percent: 0.3%","Weekday: Tue<br />Hour: 21<br />Percent: 0.2%","Weekday: Tue<br />Hour: 22<br />Percent: 0%"],"type":"bar","marker":{"autocolorscale":false,"color":"rgba(59,82,139,1)","line":{"width":1.88976377952756,"color":"transparent"}},"name":"Tue","legendgroup":"Tue","showlegend":true,"xaxis":"x","yaxis":"y","hoverinfo":"text","frame":null},{"orientation":"v","width":[0.18,0.18,0.18,0.18,0.18,0.18,0.18,0.18,0.18,0.18,0.18,0.18,0.18,0.18,0.18,0.18,0.18,0.18,0.18,0.18,0.225000000000001],"base":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],"x":[1,2,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,22.8875],"y":[0.000236071765816808,0.000708215297450425,0.00188857412653447,0.0084985835694051,0.0179414542020774,0.0280925401322002,0.118744098205855,0.163597733711048,0.12204910292729,0.0767233238904627,0.0993862134088763,0.128423040604344,0.106940509915014,0.0705854579792257,0.0302171860245515,0.0118035882908404,0.00708215297450425,0.00330500472143532,0.00236071765816808,0.00118035882908404,0.000236071765816808],"text":["Weekday: Wed<br />Hour: 1<br />Percent: 0%","Weekday: Wed<br />Hour: 2<br />Percent: 0.1%","Weekday: Wed<br />Hour: 5<br />Percent: 0.2%","Weekday: Wed<br />Hour: 6<br />Percent: 0.8%","Weekday: Wed<br />Hour: 7<br />Percent: 1.8%","Weekday: Wed<br />Hour: 8<br />Percent: 2.8%","Weekday: Wed<br />Hour: 9<br />Percent: 11.9%","Weekday: Wed<br />Hour: 10<br />Percent: 16.4%","Weekday: Wed<br />Hour: 11<br />Percent: 12.2%","Weekday: Wed<br />Hour: 12<br />Percent: 7.7%","Weekday: Wed<br />Hour: 13<br />Percent: 9.9%","Weekday: Wed<br />Hour: 14<br />Percent: 12.8%","Weekday: Wed<br />Hour: 15<br />Percent: 10.7%","Weekday: Wed<br />Hour: 16<br />Percent: 7.1%","Weekday: Wed<br />Hour: 17<br />Percent: 3%","Weekday: Wed<br />Hour: 18<br />Percent: 1.2%","Weekday: Wed<br />Hour: 19<br />Percent: 0.7%","Weekday: Wed<br />Hour: 20<br />Percent: 0.3%","Weekday: Wed<br />Hour: 21<br />Percent: 0.2%","Weekday: Wed<br />Hour: 22<br />Percent: 0.1%","Weekday: Wed<br />Hour: 23<br />Percent: 0%"],"type":"bar","marker":{"autocolorscale":false,"color":"rgba(33,144,140,1)","line":{"width":1.88976377952756,"color":"transparent"}},"name":"Wed","legendgroup":"Wed","showlegend":true,"xaxis":"x","yaxis":"y","hoverinfo":"text","frame":null},{"orientation":"v","width":[0.18,0.18,0.18,0.18,0.18,0.18,0.18,0.18,0.18,0.18,0.18,0.18,0.18,0.18,0.18,0.18,0.18,0.18,0.18,0.18,0.225000000000001],"base":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],"x":[1.18,2.18,5.18,6.18,7.18,8.18,9.18,10.18,11.18,12.18,13.18,14.18,15.18,16.18,17.18,18.18,19.18,20.18,21.18,22.18,23.1125],"y":[0.000868432479374729,0.000434216239687364,0.000434216239687364,0.0060790273556231,0.0178028658271819,0.0223621363438993,0.111593573599653,0.157620495006513,0.125488493269648,0.0835866261398176,0.120712114633087,0.144594007815892,0.0931393834129396,0.0603560573165436,0.0288753799392097,0.013677811550152,0.0060790273556231,0.00325662179765523,0.00173686495874946,0.000868432479374729,0.000434216239687364],"text":["Weekday: Thu<br />Hour: 1<br />Percent: 0.1%","Weekday: Thu<br />Hour: 2<br />Percent: 0%","Weekday: Thu<br />Hour: 5<br />Percent: 0%","Weekday: Thu<br />Hour: 6<br />Percent: 0.6%","Weekday: Thu<br />Hour: 7<br />Percent: 1.8%","Weekday: Thu<br />Hour: 8<br />Percent: 2.2%","Weekday: Thu<br />Hour: 9<br />Percent: 11.2%","Weekday: Thu<br />Hour: 10<br />Percent: 15.8%","Weekday: Thu<br />Hour: 11<br />Percent: 12.5%","Weekday: Thu<br />Hour: 12<br />Percent: 8.4%","Weekday: Thu<br />Hour: 13<br />Percent: 12.1%","Weekday: Thu<br />Hour: 14<br />Percent: 14.5%","Weekday: Thu<br />Hour: 15<br />Percent: 9.3%","Weekday: Thu<br />Hour: 16<br />Percent: 6%","Weekday: Thu<br />Hour: 17<br />Percent: 2.9%","Weekday: Thu<br />Hour: 18<br />Percent: 1.4%","Weekday: Thu<br />Hour: 19<br />Percent: 0.6%","Weekday: Thu<br />Hour: 20<br />Percent: 0.3%","Weekday: Thu<br />Hour: 21<br />Percent: 0.2%","Weekday: Thu<br />Hour: 22<br />Percent: 0.1%","Weekday: Thu<br />Hour: 23<br />Percent: 0%"],"type":"bar","marker":{"autocolorscale":false,"color":"rgba(93,200,99,1)","line":{"width":1.88976377952756,"color":"transparent"}},"name":"Thu","legendgroup":"Thu","showlegend":true,"xaxis":"x","yaxis":"y","hoverinfo":"text","frame":null},{"orientation":"v","width":[0.18,0.18,0.9,0.9,0.18,0.18,0.18,0.18,0.18,0.18,0.18,0.18,0.18,0.18,0.18,0.18,0.18,0.18,0.18,0.18,0.18,0.18,0.225000000000001],"base":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],"x":[1.36,2.36,3,4,5.36,6.36,7.36,8.36,9.36,10.36,11.36,12.36,13.36,14.36,15.36,16.36,17.36,18.36,19.36,20.36,21.36,22.36,23.3375],"y":[0.000603986309643648,0.000603986309643648,0.000201328769881216,0.000402657539762432,0.00322126031809946,0.00966378095429837,0.0163076303603785,0.0239581236158647,0.0998590698610831,0.19045701630763,0.147573988322931,0.075498288705456,0.111737467284075,0.115562713911818,0.0877793436682102,0.0746929736259311,0.0225488222266962,0.010267767263942,0.00342258908798067,0.00181195892893094,0.00221461646869338,0.000805315079524864,0.000805315079524864],"text":["Weekday: Fri<br />Hour: 1<br />Percent: 0.1%","Weekday: Fri<br />Hour: 2<br />Percent: 0.1%","Weekday: Fri<br />Hour: 3<br />Percent: 0%","Weekday: Fri<br />Hour: 4<br />Percent: 0%","Weekday: Fri<br />Hour: 5<br />Percent: 0.3%","Weekday: Fri<br />Hour: 6<br />Percent: 1%","Weekday: Fri<br />Hour: 7<br />Percent: 1.6%","Weekday: Fri<br />Hour: 8<br />Percent: 2.4%","Weekday: Fri<br />Hour: 9<br />Percent: 10%","Weekday: Fri<br />Hour: 10<br />Percent: 19%","Weekday: Fri<br />Hour: 11<br />Percent: 14.8%","Weekday: Fri<br />Hour: 12<br />Percent: 7.5%","Weekday: Fri<br />Hour: 13<br />Percent: 11.2%","Weekday: Fri<br />Hour: 14<br />Percent: 11.6%","Weekday: Fri<br />Hour: 15<br />Percent: 8.8%","Weekday: Fri<br />Hour: 16<br />Percent: 7.5%","Weekday: Fri<br />Hour: 17<br />Percent: 2.3%","Weekday: Fri<br />Hour: 18<br />Percent: 1%","Weekday: Fri<br />Hour: 19<br />Percent: 0.3%","Weekday: Fri<br />Hour: 20<br />Percent: 0.2%","Weekday: Fri<br />Hour: 21<br />Percent: 0.2%","Weekday: Fri<br />Hour: 22<br />Percent: 0.1%","Weekday: Fri<br />Hour: 23<br />Percent: 0.1%"],"type":"bar","marker":{"autocolorscale":false,"color":"rgba(253,231,37,1)","line":{"width":1.88976377952756,"color":"transparent"}},"name":"Fri","legendgroup":"Fri","showlegend":true,"xaxis":"x","yaxis":"y","hoverinfo":"text","frame":null}],"layout":{"margin":{"t":43.7625570776256,"r":7.30593607305936,"b":40.1826484018265,"l":54.7945205479452},"font":{"color":"rgba(0,0,0,1)","family":"","size":14.6118721461187},"title":{"text":"Ontario Press Releases, July 2007 - May 2021","font":{"color":"rgba(0,0,0,1)","family":"","size":17.5342465753425},"x":0,"xref":"paper"},"xaxis":{"domain":[0,1],"automargin":true,"type":"linear","autorange":false,"range":[-0.595,24.595],"tickmode":"array","ticktext":["0","5","10","15","20"],"tickvals":[0,5,10,15,20],"categoryorder":"array","categoryarray":["0","5","10","15","20"],"nticks":null,"ticks":"","tickcolor":null,"ticklen":3.65296803652968,"tickwidth":0,"showticklabels":true,"tickfont":{"color":"rgba(77,77,77,1)","family":"","size":11.689497716895},"tickangle":-0,"showline":false,"linecolor":null,"linewidth":0,"showgrid":true,"gridcolor":"rgba(235,235,235,1)","gridwidth":0.66417600664176,"zeroline":false,"anchor":"y","title":{"text":"Hour of the Day","font":{"color":"rgba(0,0,0,1)","family":"","size":14.6118721461187}},"hoverformat":".2f"},"yaxis":{"domain":[0,1],"automargin":true,"type":"linear","autorange":false,"range":[-0.00952285081538152,0.199979867123012],"tickmode":"array","ticktext":["0.0%","5.0%","10.0%","15.0%"],"tickvals":[0,0.05,0.1,0.15],"categoryorder":"array","categoryarray":["0.0%","5.0%","10.0%","15.0%"],"nticks":null,"ticks":"","tickcolor":null,"ticklen":3.65296803652968,"tickwidth":0,"showticklabels":true,"tickfont":{"color":"rgba(77,77,77,1)","family":"","size":11.689497716895},"tickangle":-0,"showline":false,"linecolor":null,"linewidth":0,"showgrid":true,"gridcolor":"rgba(235,235,235,1)","gridwidth":0.66417600664176,"zeroline":false,"anchor":"x","title":{"text":"% of Releases","font":{"color":"rgba(0,0,0,1)","family":"","size":14.6118721461187}},"hoverformat":".2f"},"shapes":[{"type":"rect","fillcolor":null,"line":{"color":null,"width":0,"linetype":[]},"yref":"paper","xref":"paper","x0":0,"x1":1,"y0":0,"y1":1}],"showlegend":true,"legend":{"bgcolor":null,"bordercolor":null,"borderwidth":0,"font":{"color":"rgba(0,0,0,1)","family":"","size":11.689497716895},"y":0.96751968503937},"annotations":[{"text":"Weekday","x":1.02,"y":1,"showarrow":false,"ax":0,"ay":0,"font":{"color":"rgba(0,0,0,1)","family":"","size":14.6118721461187},"xref":"paper","yref":"paper","textangle":-0,"xanchor":"left","yanchor":"bottom","legendTitle":true}],"hovermode":"closest","barmode":"relative"},"config":{"doubleClick":"reset","showSendToCloud":false},"source":"A","attrs":{"95b03621248f":{"x":{},"y":{},"fill":{},"text":{},"type":"bar"}},"cur_data":"95b03621248f","visdat":{"95b03621248f":["function (y) ","x"]},"highlight":{"on":"plotly_click","persistent":false,"dynamic":false,"selectize":false,"opacityDim":0.2,"selected":{"opacity":1},"debounce":0},"shinyEvents":["plotly_hover","plotly_click","plotly_selected","plotly_relayout","plotly_brushed","plotly_brushing","plotly_clickannotation","plotly_doubleclick","plotly_deselect","plotly_afterplot","plotly_sunburstclick"],"base_url":"https://plot.ly"},"evals":[],"jsHooks":[]}</script>
+<p>We get a nice bimodal distribution with peaks at around 10am and 2pm, and some oddly long tails which might be neat to look into. To answer our question, <strong>yes</strong>, it does look to me like Friday has a slightly elevated bar at hour 16, 4pm, especially compared to Thursday. And Friday’s percentages at other times are quite a bit lower than those of the other days. So there’s some rough evidence for a Friday afternoon news dump.</p>
+<p>The bigger surprise to me is that there’s stronger evidence of a Friday <em>morning</em> news dump! Friday’s bars at 10am and 11am tower over its neighbours.</p>
+<p>There’s lots more to look into here, of course, but this gives a sense of what’s possible (and why we might want to go to the trouble of getting this kind of data.)</p>
+</div>
+<div id="summary" class="section level2">
+<h2>Summary</h2>
+<p>This post introduced a new web-scraped technique called API interception, which can give direct access to the structured data behind some modern dynamic web sites. We walked through a case study using the Ontario Newsroom and outlined the four main steps to using this technique. We then made some simple plots to see whether there’s evidence of a “Friday news dump” in Ontario, and we found some evidence that more news stories are released on Friday mornings.</p>
+<p>You can grab the data here in two ~75 meg files (<a href="/data/2021-05-21-ontario_newsroom1.csv">file #1</a>, <a href="/data/2021-05-21-ontario_newsroom2.csv">file #2</a>). This data is © Queen’s Printer for Ontario, 2007-2021, and I’m providing it for educational and non-commercial purposes with full credit and acknowledgement consistent with the Newsroom’s <a href="https://www.ontario.ca/page/copyright-information-c-queens-printer-ontario">copyright information page</a>.</p>
+</div>
+</div>
+<div class="footnotes">
+<hr />
+<ol>
+<li id="fn1"><p>“XHR” is the technical term for this kind of browser/server API architecture. <a href="https://en.wikipedia.org/wiki/XMLHttpRequest">You can read about the details here</a>.<a href="#fnref1" class="footnote-back">↩︎</a></p></li>
+</ol>
+</div>
