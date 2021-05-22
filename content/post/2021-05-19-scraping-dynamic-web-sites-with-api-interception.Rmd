@@ -18,7 +18,7 @@ image:
   preview_only: no
 projects: []
 header:
-    image: "/2021-05-19/neo-talking-edited.jpg"
+    image: ''
 ---
 
 ```{r setup, include = FALSE}
