@@ -17,7 +17,7 @@ image:
   preview_only: no
 projects: []
 header:
-    image: "/2021-05-19/neo-morpheus-edited.jpg"
+    image: "/2021-05-19/neo-morpheus-edited-justneo.jpg"
 ---
 
 ```{r setup, include = FALSE}
