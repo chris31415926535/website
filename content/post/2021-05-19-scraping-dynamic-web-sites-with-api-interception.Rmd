@@ -8,15 +8,16 @@ tags:
   - scraping
   - api
 subtitle: ''
-summary: ''
-authors: []
-lastmod: '2021-05-19T13:54:28-04:00'
+summary: "This post introduces a new web-scraping technique called API interception and shows how we can use it to scrape some modern dynamic websites quickly and easily, using the Ontario Newsroom as a case study. Then we'll use this new dataset to answer a simple question: is there any evidence that more news releases come out later in the week in a 'Friday news dump?'"
+lastmod: '2021-05-22T13:54:28-04:00'
 featured: no
-image:
+image: 
   caption: ''
   focal_point: ''
   preview_only: no
 projects: []
+header:
+    image: "/2021-05-19/neo-morpheus-edited.jpg"
 ---
 
 ```{r setup, include = FALSE}
@@ -25,7 +26,7 @@ library(tidyverse)
 
 # API Interception in R
 
-It can be a major pain to scrape dynamic web pages that load more information as you scroll down or click buttons. Often you'll need to use something like Selenium to control a browser that loads the page, mimicks a bunch of key presses or button pushes, and then uses css selectors to extract the loaded data. Wouldn't it be nice if we could get that data directly in structured `json`? It might sound like magic, but in this post I'll introduce a technique called **API interception** and show how we can use it to scrape some modern dynamic websites quickly and easily, using the [Government of Ontario Newsroom](https://news.ontario.ca/en) as a case study. Then we'll use this new dataset to answer a simple question: is there any evidence that more news releases come out later in the week, in a "Friday news dump?"
+It can be a major pain to scrape dynamic web pages that load more information as you scroll down or click buttons. Often you'll need to use something like Selenium to control a browser that loads the page, mimics a bunch of key presses or button pushes, and then uses css selectors to extract the loaded data. Wouldn't it be nice if we could get that data directly in structured `json`? It might sound like magic, but in this post I'll introduce a technique called **API interception** and show how we can use it to scrape some modern dynamic websites quickly and easily, using the [Government of Ontario Newsroom](https://news.ontario.ca/en) as a case study. Then we'll use this new dataset to answer a simple question: is there any evidence that more news releases come out later in the week in a "Friday news dump?"
 
 If all you need is the facts, here are the four steps to scraping a dynamic client-side site using API interception:
 
