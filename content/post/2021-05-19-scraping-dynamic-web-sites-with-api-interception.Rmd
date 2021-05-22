@@ -4,7 +4,7 @@ author: Christopher Belanger
 date: '2021-05-19'
 slug: scraping-dynamic-web-sites-with-api-interception
 categories: []
-draft: yes
+draft: no
 tags:
   - scraping
   - api
