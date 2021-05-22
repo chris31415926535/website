@@ -16,8 +16,6 @@ image:
   focal_point: ''
   preview_only: no
 projects: []
-header:
-    image: "/2021-05-19/neo-morpheus-edited-justneo.jpg"
 ---
 
 ```{r setup, include = FALSE}
@@ -37,7 +35,8 @@ If all you need is the facts, here are the four steps to scraping a dynamic clie
 
 When it works, it feels a bit like this:
 
-
+![](/img/2021-05-19/neo-morpheus-edited-justneo.jpg)
+![](/img/2021-05-19/neo-morpheus-edited-justmorpheus.jpg)
 
 I'm sure other people are using this technique but I haven't seen it described elsewhere, so I guess this counts as "original research." Consequently, any errors are mine alone!
 
