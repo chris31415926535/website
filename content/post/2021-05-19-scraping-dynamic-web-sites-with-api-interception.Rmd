@@ -8,7 +8,7 @@ tags:
   - scraping
   - api
 subtitle: ''
-summary: "This post introduces a new web-scraping technique called API interception and shows how we can use it to scrape some modern dynamic websites quickly and easily, using the Ontario Newsroom as a case study. Then we'll use this new dataset to answer a simple question: is there any evidence that more news releases come out later in the week in a 'Friday news dump?'"
+summary: "This post introduces a new web-scraping technique called API interception using the Ontario Newsroom as a case study. Then we use our new data to answer a question: is there evidence of a 'Friday news dump' in Ontario politics?"
 lastmod: '2021-05-22T13:54:28-04:00'
 featured: no
 image: 
@@ -37,7 +37,7 @@ If all you need is the facts, here are the four steps to scraping a dynamic clie
 
 When it works, it feels a bit like this:
 
-![](/img/2021-05-19/neo-morpheus-edited.jpg)
+
 
 I'm sure other people are using this technique but I haven't seen it described elsewhere, so I guess this counts as "original research." Consequently, any errors are mine alone!
 
