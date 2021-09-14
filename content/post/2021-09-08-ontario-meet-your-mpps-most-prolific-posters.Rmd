@@ -1,0 +1,778 @@
+---
+title: Ontario, Meet Your MPPs (Most Prolific Posters)
+author: Christopher Belanger
+date: '2021-09-13'
+slug: ontario-meet-your-mpps-most-prolific-posters
+categories: []
+tags:
+  - twitter
+  - rstats
+  - social media
+subtitle: 'Analyzing Social Media Use By Elected Officials in Ontario'
+summary: "How do politicians in Ontario use Twitter? Who do they talk to, and what do they talk about? In this post, we'll look at what and who politicians care about by analyzing their public statements on social media."
+authors: []
+lastmod: '2021-09-13T09:44:25-04:00'
+featured: no
+header:
+  image: "/headers/2021-09-13-twitter-queens-park.jpg"
+  caption: "Queen's Park, Toronto, as seen from Macdonald Block. Photo by Christopher Belanger, Twitter logo copyright Twitter."
+projects: []
+---
+
+```{r include = FALSE}
+library(tidyverse)
+library(rtweet)
+library(rvest)
+library(httr)
+library(reactable)
+library(networkD3)
+library(DT)
+library(igraph)
+
+knitr::opts_chunk$set(message = FALSE, warning = FALSE)  
+
+load("../../static/data/2021-09-13-mpp_tweet_analysis.Rdata")
+#save.image("../../static/data/2021-09-13-mpp_tweet_analysis.Rdata")
+party_colours <- function(party, brighten = 0){
+  # https://www.reddit.com/r/CanadaPolitics/comments/3qibmy/resource_hex_codes_for_all_party_colours/
+  col <- case_when(party == "PCP" ~ "#1A4782",
+            party == "LIB" ~ "#D71920",
+            party == "NDP" ~ "#F37021",
+            party == "GRN" ~ "#3D9B35",
+            party == "NBP" ~ "#115588",
+            party == "IND" ~ "#CCCCCC")
+  
+  # if we're brightening the colours, find out by how much
+  # note! this is a quick hack, not a graphic-design friendly solution
+  if (brighten > 0){
+    col <- (col2rgb(col) + c(brighten, brighten, brighten)) %>% 
+      purrr::map_dbl(min, 255) 
+    
+    col <- rgb(col[[1]], col[[2]], col[[3]], maxColorValue = 255)
+  }
+  return (col)
+}
+
+# custom function to scale the colours
+scale_colour_parties <- scale_colour_discrete(type = c("#1A4782","#F37021","#D71920","#3D9B35", "#CCCCCC"))
+scale_fill_parties <- scale_fill_discrete(type = c("#1A4782","#F37021","#D71920","#3D9B35", "#CCCCCC"))
+
+```
+
+## Introduction
+
+How do politicians in Ontario use Twitter? Who do they talk to, and what do they talk about? In this post, we'll look at what and who politicians care about by analyzing their public statements on social media.
+
+We'll look at how often and successfully MPPs tweet. We'll also do some content analysis to see what different parties focus on. And we'll do some network analysis to look for patterns in who MPPs talk to online.
+
+### Basic Ontario Civics
+
+This post assumes some basic familiarity with [Ontario](https://en.wikipedia.org/wiki/Ontario) and [its political parties](https://en.wikipedia.org/wiki/List_of_political_parties_in_Ontario), but we'll do some quick reminders. 
+
+* Our elected politicians are called Members of Provincial Parliament (MPPs).  
+* The Progressive Conservative Party (PCP) holds a majority led by Doug Ford.
+* The New Democratic Party (NDP) is the official opposition led by Andrea Horwath.
+* The Liberal Party (LIB) has a few seats and is apparently led by Steven Del Duca.
+* Mike Schreiner of the Green Party (GRN) holds one seat. 
+* Once elected, PCP MPP Belinda Karahalios split off to create the New Blue Party (NBP), with one seat.
+* There are also a few other, uh, [colourful](https://www.cp24.com/news/mpp-rick-nicholls-booted-from-ontario-pc-caucus-after-refusing-to-get-covid-19-vaccine-1.5553865) [independent MPPs](https://globalnews.ca/news/7678305/constituents-call-for-mpp-randy-hillier-removal/).
+
+Belinda Karahalios appears to have [deleted her Twitter account](https://twitter.com/KarahaliosPC), so her past tweets are unreadable and I'll exclude her from the analysis for simplicity. But if the New Blue Party picks up steam we could always include her in a  future analysis.
+
+## Getting the Data
+
+We need two data sets: each MPP's Twitter handle, then a set of tweets from each MPP.
+
+### Twitter Handles
+
+First we need to know each MPP's Twitter handle. Strangely, the [Office of the Legislative Assembly's MPP contact page](https://www.ola.org/en/members/current/contact-information) doesn't have this information, but the [Horticultural Trades Association does](https://horttrades.com/mpp-twitter-handles). Thanks guys!
+
+```{r, eval=FALSE}
+# manually adjust some party affiliations that weren't up to date in the original data
+ind_mpps <- c("Roman Baber", "Rick Nicholls", "Jim Wilson", "Randy Hillier")
+nbp_mpps <- c("Belinda Karahalios")
+
+url <- "https://horttrades.com/mpp-twitter-handles"
+handle_html <- rvest::read_html(url)
+
+# extract the table, remove the header, then tidy them up and expand them
+# Roman Baber is now an Independent MPP
+mpp_handles <- tibble::tibble(data = rvest::html_table(handle_html)) %>%
+  slice(-1) %>%
+  mutate(data = purrr::map(data, rename, name = 1, riding = 2, handle = 3),
+         data = purrr::map(data, select, name, riding, handle),
+         data = purrr::map(data, filter, name != "NAME"),
+         party = c("PCP", "NDP", "LIB", "GRN", "IND")) %>%
+  unnest(data) %>%
+  mutate(name = stringr::str_remove(name, "Hon. ")) %>%
+  filter(is.na(as.numeric(name))) %>% # remove some junk rows that are just numbers
+  mutate(handle_txt = stringr::str_remove(handle, "@")) %>%
+  mutate(party = if_else(name %in% ind_mpps, "IND", party),
+         party = if_else(name %in% nbp_mpps, "NBP", party)) %>%
+  mutate(party = factor(party, levels = c("PCP","NDP","LIB","GRN", "NBP", "IND"))) 
+  
+```
+
+Here's the list of MPPs with ridings and Twitter handles according to the HTA as of September 8, 2021.
+
+```{r mpp_data_table}
+# custom function to colour the rows to match the party.
+row_colours <- function(x, brighten = 0) {
+    for (i in 1:nrow(for_table)) {
+      x <- kableExtra::row_spec(x,
+                                row = i,
+                                background = party_colours(for_table$party[[i]], brighten = brighten))
+    }
+  x
+}
+
+# create a smaller data set just for the table.
+# recognize Karahalios as the sole member of the New Blue Party for this table.
+for_table <- mpp_handles %>%
+  select(name, riding, handle, party) %>%
+  arrange(party, name)
+
+# make a nice-ish table.
+# DT::datatable() gave jQuery errors--couldn't figure out why.
+for_table %>%
+  knitr::kable(col.names = c("Name", "Riding", "Twitter Handle", "Party")) %>%
+  row_colours(brighten = 120) %>%
+  kableExtra::scroll_box(height = "300px")
+
+# clean up
+rm(for_table)
+```
+
+There may have been some additional seat changes, so for this preliminary analysis we're relying on the data I was able to find. (For a published study we'd be a bit more careful here.)
+
+### Tweets
+
+I used R's **rtweets** package to get as many tweets as possible for each MPP. I'm using the free Twitter API, so we're limited here to specific information about each MPP's past 3,200 tweets. It includes tweet texts, favourites, and mentions, so we can do a lot. But it doesn't include replies, so unfortunately we won't be able to find which MPPs are most consistently [ratioed](https://knowyourmeme.com/memes/the-ratio) (which was actually my original research question).
+
+```{r not_evaluated_get_tweets, eval=FALSE}
+# doing it with a for loop because of rate limits
+# set up an empty list
+results <- list()
+
+# get the tweets for each MPP one at a time.
+# we will bump up against rate limits! so monitor progress, and once it fails,
+# wait 15 minutes and then re-start it at the point of failure.
+# note that you need your own token for this code to run :)
+for (i in 1:nrow(mpp_handles)){
+  message(i)
+  result <- NULL
+  result <- rtweet::get_timeline(user = mpp_handles$handle_txt[[i]],
+                                 n = 3200,
+                                 token = token)
+  results[[i]] <- result
+}
+
+# set up a new tibble with our results
+mpp_tweets <- mpp_handles
+mpp_tweets$tweets <- results
+
+# then filter out those with no tweets found, and those who found my bot's tweets
+# for some reason! likely due to a weird failure condition due to rate limits
+# then make party an ordered factor
+# also figure out which tweets are not retweets
+mpp_tweets <- mpp_tweets %>%
+  mutate(num_tweets_found = purrr::map_dbl(tweets, nrow)) %>%#purrr::map_lgl(tweets, function(x) "created_at" %in% colnames(x)),
+  filter(num_tweets_found > 0) %>%
+  mutate(my_tweets_found = purrr::map_lgl(tweets, function(x) "OttCovidApts2" %in% unique(x$screen_name))) %>%
+  filter(!my_tweets_found) %>%
+  mutate(party = factor(party, levels = c("PCP","NDP","LIB","GRN","IND"))) %>%
+  mutate(tweets_no_rt = purrr::map(tweets, filter, !is_retweet),
+         num_tweets_no_rt = purrr::map_dbl(tweets_no_rt, nrow))
+
+# save our data here, since it was a pain to collect
+save.image(file = "mpp_progress_test.Rdata")
+
+```
+
+I downloaded these tweets on September 8, 2021, so that's the time cut-off for this analysis.
+
+## Behaviour: How are MPPs Using Twitter?
+
+Let's look at a few dimensions of online behaviour: how many party members are online, how much original content they post vs. other people's content, and how often they post and with how much reaction.
+
+### Most Online Party
+
+Which party is the most online? We'll look to see what percentage of elected MPPs have at least one public tweet:
+
+```{r get_online_parties, eval=FALSE}
+# figure out what % of party members have at least one public tweet
+online_stats <- mpp_handles %>%
+  group_by(party) %>%
+  filter(party != "NBP") %>%
+  summarise(num_total = n()) %>%
+  left_join(mpp_tweets %>%
+              group_by(party) %>%
+              summarise(num_online = n()),
+            by = "party") %>%
+  mutate(pct_online = num_online / num_total) %>%
+  mutate(party = factor(party, levels = c("PCP","NDP","LIB","GRN","IND")))
+```
+
+```{r plot_online_parties}
+# make a static plot
+online_plot <- online_stats %>%
+  ggplot() +
+  geom_col(aes(x=reorder(party, pct_online),
+               y = pct_online,
+               fill = party,
+       text = sprintf("Party: %s\n%% MPPs with at least one public tweet: %%%.1f",
+                      party,
+                      pct_online*100)),
+           ) +
+  scale_fill_parties +
+  theme_minimal()+
+  scale_y_continuous(label = scales::percent) +
+  coord_flip() +
+  labs(title = "Which Party is the Most Online?",
+       subtitle = "Percent of Ontario's party members with at least one public tweet.",
+       x = NULL,
+       y = NULL,
+       fill = "Party") +
+  theme(legend.position = "top")
+
+plotly::ggplotly(online_plot, tooltip = "text")
+
+# clean up
+rm(online_stats)
+rm(online_plot)
+```
+
+All of the independents and the one Green MPP are active on Twitter, but that feels like cheating given the small sample sizes. Of the larger parties, the NDP edges out both the Liberals and the PCs.
+
+But really, *all* parties are quite online, with over 80% of their members active on Twitter. This suggests that political Twitter could be a rich topic of study, since most MPPs are using it.
+
+### Tweets or Retweets?
+
+Let's look at original tweets vs. retweets, to see whether MPPs are posting their own thoughts or just echoing and amplifying others. An original tweet is written by the MPP in question and posted for the first time, and a retweet is a ["a re-posting of a Tweet," which Twitter says "helps you and others quickly share that Tweet with all of your followers."](https://help.twitter.com/en/using-twitter/retweet-faqs) 
+
+First we can find the percentage of original tweets for each MPP, and plot the results on a histogram to see the distribution of their overall behaviour.
+
+```{r orig_tweet_freqs, eval = FALSE}
+mpp_tweets_orig <- mpp_tweets %>%
+  mutate(pct_orig = num_tweets_no_rt/num_tweets_found) %>%
+  select(-tweets, -tweets_no_rt)
+```
+
+
+```{r retweet_histogram}
+# make a static histogram of all MPPs together for % of original tweets,
+# then make it interactive
+# thanks to this SO answer for the inspiration
+# https://stackoverflow.com/questions/61109849/is-there-a-way-to-add-the-bin-range-label-into-the-tooltip-for-a-histogram-using
+plot_step1 <- ggplot_build(
+  mpp_tweets_orig %>% 
+  ggplot() + 
+  geom_histogram(aes(x=pct_orig), 
+                 bins = 11,
+                 fill = "darkgrey",
+                 colour = "darkgrey")
+)$data[[1]]
+
+plot_step2 <- plot_step1 %>% {
+  ggplot(data = .,
+         aes(x=factor(x), 
+             y = count, 
+             text = sprintf("Count: %d\nRange: (%.1f-%.1f%%)", y, round(xmin*100,1), round(xmax*100,1)))) + 
+  scale_x_discrete(labels = sprintf("%.0f-%.0f%%", .$xmin*100, .$xmax*100)) + 
+  geom_bar(stat="identity", 
+           width = 1) + 
+  labs(title = "Histogram: Percentage of Original MPP Tweets",
+       subtitle = "Most MPPs have a fairly even mix of original tweets and retweets.",
+       x = "% Original Tweets",
+       y = "Count") +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 45 )) #, vjust = -.05))
+  }
+
+
+# make it interactive
+plotly::ggplotly(plot_step2,
+tooltip = c("text"))
+
+# clean up
+rm(plot_step1)
+rm(plot_step2)
+```
+
+Most MPPs have slightly more than 50% original tweets, meaning they write about one original tweet for each retweet. But some do almost nothing but retweet, and some post almost only original content.
+
+Let's see if there is an obvious difference in tweet/retweet behaviour across the parties with a set of box plots.
+
+```{r retweet_boxplotplot}
+# make a set of static boxplots by party for % original tweets
+plot_box <- mpp_tweets_orig %>%
+  ggplot() +
+  geom_boxplot(aes(x=party, y = pct_orig, fill = party)) +
+  scale_fill_parties +
+  theme_minimal() +
+  labs(title = "Percentage of Tweets that are Original (Not Re-Tweets)",
+       x = NULL,
+       y = NULL,
+       fill = "Party") +
+  scale_y_continuous(label = scales::percent) +
+  theme(legend.position = "none")
+
+plotly::ggplotly(plot_box)
+```
+
+The boxes overlap for the three major parties, but we can still see some interesting population differences. The NDP and Conservatives have much longer tails, showing that they have members who do almost nothing but retweet, and members who produce almost exclusively original content. The Liberals have the most balanced approach, with the majority of members producing at least one original tweet for each retweet.
+
+### Tweet Volume, Velocity, and Popularity
+
+Let's look at how often MPPs tweet and how much engagement they get, defined as the number of favourites and retweets. In this analysis we're looking only at original tweets, so MPPs won't get credit for retweeting a 20k-like video of someone else's cat. We want to know how much organic engagement party members get by themselves. 
+
+For each active MPP, the following log-log plot shows their average engagements per tweet vs. how often they tweet on average. Moving right means tweeting more often, and moving up means getting more reactions to each tweet. The size of each circle shows how many tweets we found (with an API-imposed maximum of approximately 3,200).
+
+```{r get_usage, eval = FALSE}
+# function to find out the average tweets per day, average engagements per tweet,
+# and number of tweets, and filter out a few erroneous rows
+get_twitter_stats <- function(z){
+  if (!"created_at" %in% colnames(z)) return (tibble::tibble(num_tweets = 0, tweets_per_day = 0, engagements_avg = 0))
+  if ("OttawaCovidAptsDose2" %in% z$source) return (tibble::tibble(num_tweets = 0, tweets_per_day = 0, engagements_avg = 0))
+z %>%
+  mutate(timespan = max(created_at) - min(created_at),
+         timespan = as.numeric(timespan),
+         engagements = favorite_count + retweet_count) %>%
+ select(timespan, engagements) %>%
+  group_by(timespan) %>%
+  summarise(num_tweets = n(),
+            engagements_avg = mean(engagements)) %>%
+  mutate(tweets_per_day = num_tweets/timespan) %>%
+  select(-timespan)
+}
+
+# get the engagement stats, then unnest them
+# also make party a factor with set levels for colouring later
+mpp_engagement <- mpp_tweets %>%
+  mutate(engagement_stats = purrr::map(tweets_no_rt, get_twitter_stats)) %>%
+  unnest(cols = c(engagement_stats)) %>%
+  select(-tweets, -tweets_no_rt)  %>%
+  mutate(party = factor(party, levels = c("PCP","NDP","LIB","GRN","IND")))
+```
+
+```{r usage_plot}
+# set up axes for the plot
+x_breaks <- c(.14, .4, 1.4, 4, 14)
+y_breaks <- c(4, 15, 60, 240, 700)
+  
+# create a static ggplot
+plot_engagement <-  mpp_engagement %>%
+  ggplot()  +
+  geom_segment(aes(x= median(x_breaks), xend = median(x_breaks), y = min(y_breaks), yend = max(y_breaks)), colour = "black", size = 1) +
+  geom_segment(aes(x=min(x_breaks), xend = max(x_breaks), y = median(y_breaks), yend = median(y_breaks)), colour = "black", size = 1) +
+  annotate("text", x = x_breaks[[2]], y = y_breaks[[2]], label = "Beginners", colour = "#666666", size = 10) +
+  annotate("text", x = x_breaks[[2]], y = y_breaks[[4]], label = "Influencers", colour = "#666666", size = 10) +
+  annotate("text", x = x_breaks[[4]], y = y_breaks[[2]], label = "Tryhards", colour = "#666666", size = 10) +
+  annotate("text", x = x_breaks[[4]], y = y_breaks[[4]], label = "Extremely\nOnline", colour = "#666666", size = 10) +
+  geom_point(aes(x=tweets_per_day, 
+             y = engagements_avg, 
+             size = num_tweets,
+             colour = party,
+             text = sprintf("%s (%s)\nAvg. Tweets/Day: %.2f\nAvg. Engagements/Tweet: %.2f\nTotal Tweets Found: %d", 
+                            name, party, 
+                            round(tweets_per_day, digits = 2),
+                            round(engagements_avg, digits = 2),
+                            num_tweets)),
+             alpha = 0.6) +
+  scale_x_continuous(trans = "log"
+                     , breaks = x_breaks
+                     ) +
+  scale_y_continuous(trans = "log"
+                     , breaks = y_breaks
+                     ) +
+  theme_minimal() +
+  scale_size(guide = "none") +
+  labs(title = "Original Tweets: Volume, Velocity, and Engagement",
+       x = "Tweets per Day",
+       y= "Avg. Engagements per Tweet",
+       colour = "Party") +
+    scale_colour_discrete(type = c("#1A4782","#F37021","#D71920","#3D9B35", "#CCCCCC"))
+
+# make the plot interactive
+plotly::ggplotly(plot_engagement,
+                 tooltip = c("text")) %>% 
+  plotly::layout(legend = list(orientation = "h", x = 0.29, y = -0.2))
+
+# clean up
+rm(plot_engagement)
+```
+
+Noting again the log axes, we can divide this plot into four quadrants representing four different kinds of Twitter users. 
+
+The **Beginners** in the bottom-left quadrant are modest posters. They don't tweet much, averaging fewer than 1.4 tweets per day, and people tend not to notice much when they do. 
+
+The **Extremely Online** MPPs in the top-right tweet a *lot*, and people react when they do. The NDP, PC, and Green leaders are there, and Randy's out in front tweeting up a storm.
+
+The **Influencers** in the top-left are a rare group who tweet infrequently but generate a big reaction. I browsed their posts, and it's not hard to see why: they're high-profile MPPs who make a small number of issues-focused posts.
+
+Finally, we have the **Tryhards** in the lower-right who post constantly but don't get much of a reaction. These MPPs are churning out tweets every day, often in both official languages, without anyone really noticing.
+
+
+## Content: What Are MPPs Tweeting About?
+
+Next, let's look at the content of these tweets. We'll use the simple approach of dividing MPPs by party, breaking tweets into individual words, and then calculating each word's relative frequency by party. This way we can compare word usage across parties of different sizes. If you browse the code, we'll do this with **dplyr** and a few helper functions from [**tidytext**](https://www.tidytextmining.com/).
+
+```{r get_word_freqs, eval = FALSE}
+# get tidytext's stopwords and add a few more
+stopwords <- tidytext::stop_words %>%
+  bind_rows(tibble(word = c("t.co", "amp", "http", "https", "it’s"), 
+                   lexicon = "custom"))
+
+# pull out the tweet texts, break into words, remove any numbers, remove
+# stopwords, group by party, then count word frequency.
+# then get the intra-party relative frequency of each word.
+word_freqs <- mpp_tweets %>%
+  select(party, tweets_no_rt) %>%
+  mutate(text = purrr::map_chr(tweets_no_rt, function(x) pull(x, text) %>% 
+                                 unlist() %>% 
+                                 stringr::str_flatten(collapse = " "))) %>%
+  select(-tweets_no_rt) %>%
+  tidytext::unnest_tokens(word, text)  %>%
+  filter(is.na(as.numeric(word))) %>%
+  anti_join(stopwords, by = "word") %>%
+  group_by(word, party) %>%
+  summarise(count = n()) %>%
+  arrange(desc(count)) %>%
+  group_by(party) %>%
+  mutate(total_words = sum(count),
+         party_pct = count/total_words) %>%
+  select(-total_words)
+
+# now set up some words of interest
+word_of_interest <- c("onpoli", "ontario", 
+                      #"ford", "premier",
+                      "justice", "crime",
+                      "environment", "economy"
+                      )
+
+# filter for words of interest to make a smaller dataset for plotting
+ word_freqs_of_interest <- word_freqs %>%
+  filter (word %in% word_of_interest) 
+
+```
+
+The following plot shows word prevalences in original tweets for each party, excluding retweets. I've chosen a few keywords for comparison: "Ontario" and "#onpoli"; "justice" and "crime"; and "environment" and "economy." Note that the y-axes are different for each word, so these plots are only good for *relative* comparisons.
+
+
+```{r word_plot, message=FALSE, warning=FALSE}
+# make a facet-wrapped set of bar plots for word frequency by party
+wordplot <- word_freqs_of_interest %>%
+  mutate(word = factor(word, levels = word_of_interest)) %>%
+  ggplot() +
+  geom_col(aes(x = party, 
+               y = party_pct, 
+               fill = party,
+       text = sprintf("Word: %s\nParty: %s\nPrevalence in %s Tweets: %%%.2f", 
+                      word, party, party,
+                      (party_pct * 100)
+                      ))) +
+  facet_wrap(~word, scales = "free_y", ncol = 2) +
+  theme_minimal() +
+  scale_y_continuous(labels = scales::percent)  +
+    scale_fill_discrete(type = c("#1A4782","#F37021","#D71920","#3D9B35", "#CCCCCC")) +
+  theme(legend.position = "bottom") +
+  labs(title = "Word Prevalence in Original Tweets by MPPs",
+       x = NULL,
+       y = NULL, #"% of Party Words",
+       fill = "Party"
+  )
+
+# make the plot interactive
+plotly::ggplotly(wordplot, width = 600,
+                 height = 500,
+                 tooltip = c("text")) %>% 
+  plotly::layout(legend = list(orientation = "h", x = 0.2, y = -0.05))
+
+# clean up
+rm(wordplot)
+```
+
+With those caveats, we can make a few observations:
+
+* **ONPoli vs. Ontario:** As suspected, the PCs use the general word "Ontario" much more than the other parties, and the other parties use "#ONPoli" much more than the PCs. This might reflect different purposes--making official statements vs. trying to start an online discussion--or it might reflect different levels of power and comfort. Why use a hashtag when everyone is already listening to you?
+* **Justice vs. Crime:** The PCs use the word "crime" far more than any other party, and the NDP uses the word "justice" far more. This lines up with what we might expect from a right-wing party with a populist leader and a left-wing party. The surprise here is that the Liberals and Greens barely mention crime at all. Given their third-party status, maybe they're focusing their messaging elsewhere?
+* **Environment vs. Economy:** The details here surprise me. We might expect the NDP's messaging to focus less on the economy, but I wouldn't have expected this much of a disparity. We also might have expected the Greens to focus on the environment, but I wouldn't have expected the PCs to focus on it so much too, or for the NDP to mention it the least out of the four parties.
+
+Without getting into detailed statistics, it looks pretty clear that the parties have different priorities and messaging directives when it comes to their online communications.
+
+
+## Networks: Who Talks to Whom?
+
+Which MPPs interact with which on Twitter? We can explore this question using a *network diagram*, also called a graph, where each MPP is represented by a circle (or a "node"), and each interaction is represented by a line (or an "edge"). The thickness of each line tells us how often MPPs interact.
+
+We'll define an interaction as replying to a tweet or mentioning another user in a tweet, since those are the two data points we get from the free Twitter API.
+
+Here we'll use *directed force networks*, which incorporate some dynamics: nodes repel each other by default, and attract each other based on the strength of the ties between them. This can help us to see patterns in the data, as the nodes work themselves into a stable configuration. We'll use the **igraph** package to make a static picture and **networkD3** to make an interactive simulation. For more details I'd suggest [Keith McNulty's free book *Handbook of Graphs and Networks in People Analytics*](https://ona-book.org/index.html).
+
+### All Ties
+
+First, we'll make a directed force network for *all* interactions between MPPs. Each MPP gets a node, and every pair that has ever interacted gets a line between them. The interactive version runs quite slowly with 108 nodes and over 6,000 edges, so we'll use **igraph** to make an unlabeled static image first.
+
+```{r message = FALSE, warning = FALSE, eval=FALSE}
+# get all of the mentions, quotes, and replies
+# put this in a function so we can use it easily with purrr::map
+get_interactions <- function(tweets){
+  if (!"screen_name" %in% colnames(tweets)) return("")
+  message(tweets$screen_name[[1]])
+  select(tweets, ends_with("screen_name"), -screen_name) %>% 
+  #select(tweets, mentions_screen_name, -screen_name) %>% #ends_with("screen_name")
+  unlist() %>%
+  tibble(interaction_screen_name = .) %>%
+  drop_na() %>%
+  group_by(interaction_screen_name) %>%
+  summarise(num = n()) %>%
+  arrange(desc(num)) %>%
+  filter(interaction_screen_name %in% mpp_handles$handle_txt)
+}
+
+# get a long list of the number of interactions from each source to each target
+mpp_interactions <- mpp_tweets %>% 
+  mutate(i = purrr::map(tweets, get_interactions)) %>%
+  select(source_name = name, source_screen_name = handle_txt, i, source_party = party)  %>%
+  rowid_to_column(var = "source_id") %>%
+  mutate(source_id = source_id - 1) %>%
+  unnest(cols = c(i)) %>%
+  #select(-i) %>% 
+  drop_na() %>%
+  rename(target_screen_name = interaction_screen_name)
+
+# extract just the individual node ids to add some information back to the interaction data
+mpp_node_ids <- mpp_interactions %>%
+  select(node_id = source_id, screen_name = source_screen_name, name = source_name, party = source_party) %>%
+  distinct()
+
+# join the target data to the interactions data
+mpp_interactions <- mpp_node_ids %>%
+  rename(target_id = node_id, target_screen_name = screen_name, target_name = name, target_party = party) %>%
+  right_join(mpp_interactions, by = c("target_screen_name")) %>%
+  select(starts_with("source"), num, starts_with("target")) %>%
+  arrange(source_id, desc(num))
+```
+
+```{r force_function}
+# create a function to prep the data and make a directed force graph for MPPs
+# with a given minimum number of interactions
+make_directed_force_graph <- function(mpp_interactions){
+  # create links for a directed force graph
+  force_links <- mpp_interactions %>%
+    filter(source_id != target_id) %>%
+    mutate(num = num / 1000)
+  
+  # create nodes for a directed force graph
+  force_nodes <- mpp_node_ids %>%
+    select(name, party) 
+  
+  # set up a colour scale
+  col_scale <- c( "PCP"= "#1A4782",
+                  "NDP"=  "#F37021",
+                  "LIB"= "#D71920",
+                  "GRN" = "#3D9B35",
+                  "IND"=   "#CCCCCC")
+  
+  
+  #["PCP", "NDP", "LIB", "GRN", "IND"]
+  #["#1A4782","#F37021","#D71920","#3D9B35", "#CCCCCC"]
+  
+  forceNetwork(Links = force_links, #ff,
+               Nodes = force_nodes, #nn,
+               Source = "source_id",
+               Target = "target_id",
+               Value = "num",
+               NodeID = "name",
+               Group = "party",
+               colourScale = JS('d3.scaleOrdinal()
+                              .domain(["PCP", "NDP", "LIB", "GRN" ,"IND"])
+                              .range(["blue","orange","red","green", "gray"]);'),
+               opacity = 1, 
+               opacityNoHover = 0.5,
+               arrows = TRUE,
+               zoom = TRUE)
+  
+}
+
+```
+
+
+
+```{r all_network_plot}
+# now call the function with our prepared data
+#make_directed_force_graph(mpp_interactions)
+# create an igraph object from our data
+mpp_graph <- mpp_interactions %>%
+  select(source_name, target_name, everything()) %>%
+  filter(source_name %in% mpp_node_ids$name,
+         target_name %in% mpp_node_ids$name) %>%
+  igraph::graph_from_data_frame(vertices = select(mpp_node_ids, name, party))
+
+# create a reactive-force layout
+set.seed(1234)
+fr <- igraph::layout_with_fr(mpp_graph)
+
+# set the colours
+V(mpp_graph)$color <- party_colours(V(mpp_graph)$party)
+
+# remove labels, since we can't read them anyway!
+# make the plot
+plot(mpp_graph, layout = fr, vertex.label = NA,
+     main = "Directed Force Graph for MPP Tweet Engagements")
+```
+
+It looks like almost everyone is interacting with everyone else, at least to some degree. I'm presenting this as an unlabeled static image because the labels were unreadable, and with so many nodes and edges it was *slow* as an interactive simulation. (There's an interactive one down below, if you're impatient.)
+
+But there's some order to this plot. The graph divides roughly into three camps, with one cluster for the governing PCs and one for the opposition NDP. This suggests that MPPs within each camp interact more with each other than with the opposing party, which binds them together. However, NDP MPPs also direct a lot of attention at high-profile PC MPPs. There are quite a few cabinet members right at the border, including Christine Elliott, Lisa MacLeod, Stephen Lecce, and--naturally--Doug Ford. This suggests that although they are more tightly bound to members of their own party, they attract enough attention from the opposition to pull them to the edge of the cluster.
+
+Most Liberals and the one Green member are clustered roughly between the two main camps, suggesting that they tend to interact equally with both groups.
+
+### Only Strong Ties
+
+To find some deeper structure, let's focus on *strong ties* between people who interact more often. The histogram below shows the distribution of interaction counts on a log-x axis. Most MPPs interact with a given MPP only infrequently--sometimes only once--but there's a long right tail.
+
+```{r}
+mpp_interactions %>%
+  ggplot() +
+  geom_histogram(aes(x=num), 
+                 bins = 15,
+                 fill = "darkgrey") +
+  scale_x_continuous(trans = "log", breaks = c(1,10,100,3000)) +
+  theme_minimal() +
+  labs(x = "Number of Interactions",
+       y = "Count",
+       title = "Histogram of Interaction Counts between MPPs on Twitter")
+
+
+```
+ 
+This suggests that we could learn more by focusing on these stronger ties, since people who interact more often probably have a more meaningful political relationship. 
+
+Eyeballing the histogram, let's make a network graph only including people who have interacted more than 25 times. Now the thickness of the line depends on how many interactions they've had.
+
+This is an interactive simulation using **networkD3**, so if you're on a desktop you can use your mouse to pan around, click and drag nodes to watch them wobble around, and adjust the zoom with your mouse wheel. 
+ 
+```{r small_network_plot}
+mpp_interactions %>%
+  filter(num > 25) %>%
+  make_directed_force_graph()
+```
+
+Now we're getting somewhere! There are three clusters for the main parties, showing that MPPs interact most with other party members. The Premier, Doug Ford, is now dragged out into centre stage: almost everyone is talking to or about him. PC Cabinet members aren't nearly so exposed in this graph, meaning a opposition MPPs interact with them only infrequently. And Randy's off on his own, yelling at Doug.
+
+Focusing on the leaders, Mike Schreiner interacts only with Premier Doug Ford and the NDP leader, Andrea Horwath. I suppose that befits a party leader. Surprisingly, apart from Schreiner, only NDP MPPs interact strongly with Horwath. I'm not sure if the PCs are hands-off as a matter of party discipline or simply through lack of interest.
+
+## Summing Up
+
+We've learned quite a bit about how Ontario's MPPs and political parties use Twitter.
+
+* **Most parties are quite online.** More than 80% of each party's members are active on Twitter, with at least one public post.
+* **Most MPPs post a lot of original content.** Most MPPs post slightly more than one original tweet for each retweet. There's wide variation though, and some post almost no retweets while others post nearly nothing but.
+* **There's a lot of variation in MPPs' volume, velocity, and quality.** We looked at the distribution and divided them into four categories--Beginners, Influencers, Extremely Online, and Tryhards.
+* **Parties tweet about different things.** We found substantial differences in word frequencies between parties, and some of those differences matched their political positions.
+* **Nearly everyone talks to everyone sometimes.** The full network graph of all interactions was extremely interconnected, although as we saw there was some structure along party lines.
+* **Connections are generally strongest between parties, but everyone talks about Doug Ford.** We found clear party clusters when we looked only at strong network connections, but the Premier was the clear and singular focus of everyone's online conversations.
+
+We could go into more detail about any of these (or much more besides!) but this feels like a good place to stop. If you have thoughts, feel free to leave a comment or send me an email.
+
+```{r old_network_plot, include = FALSE}
+
+
+
+# mpp_interactions <- mpp_tweets %>% 
+#   mutate(i = purrr::map(tweets, get_interactions)) %>%
+#   select(name, handle_txt, i, party)  %>%
+#   rowid_to_column(var = "source") %>%
+#   mutate(source = source - 1) %>%
+#   unnest(cols = c(i)) %>%
+#   #select(-i) %>% 
+#   drop_na()
+# 
+# #mpp_interactions
+# 
+# mpp_node_ids <- mpp_interactions %>%
+#   select(nodeid = source, handle_txt, name, party) %>%
+#   distinct()
+
+# for colour scale https://stackoverflow.com/questions/35280218/r-networkd3-package-node-coloring-in-simplenetwork
+# if you're using networkD3, MAKE SURE THERE ARE NO NAs IN YOUR DATA! It will fail silently!
+
+
+# 
+# # create links for a directed force graph
+# force_links <- left_join(mpp_interactions, select(mpp_node_ids, interaction_screen_name = handle_txt,
+#                                                 target_name = name,
+#                                                 target = nodeid),
+#                   by = "interaction_screen_name" ) %>%
+#   select(source, target, value = "num") %>%
+#   filter(source != target)%>%
+#   mutate(value = value / 1000)
+# 
+# 
+# f <- force_links %>%
+#   select(source, target, value) %>%
+#   filter(source != target)# %>%  mutate(value = value / 100)
+# 
+# force_nodes <- n <- mpp_node_ids %>%
+#   select(name, party) %>%
+#   mutate(size = 10) %>%
+#   mutate(group = 1) 
+# 
+# num_to_use <- 108
+# 
+# ff <- filter(f, 
+#              source < num_to_use,
+#              target < num_to_use)
+# nn <- slice_head(n, n = num_to_use)
+# #MisNodes
+# #MisLinks
+# col_scale <- c( "PCP"= "#1A4782",
+#                 "NDP"=  "#F37021",
+#                 "LIB"= "#D71920",
+#                 "GRN" = "#3D9B35",
+#                "IND"=   "#CCCCCC")
+# 
+# 
+#  #["PCP", "NDP", "LIB", "GRN", "IND"]
+# #["#1A4782","#F37021","#D71920","#3D9B35", "#CCCCCC"]
+# #["#1a4782","#f37021","#d71920","#3d9b35", "#cccccc"]
+# 
+# forceNetwork(Links = force_links, #ff,
+#              Nodes = force_nodes, #nn,
+#              Source = "source",
+#              Target = "target",
+#              Value = "value",
+#              NodeID = "name",
+#              Group = "party",
+#              colourScale = JS('d3.scaleOrdinal()
+#                               .domain(["PCP", "NDP", "LIB", "GRN" ,"IND"])
+#                               .range(["blue","orange","red","green", "gray"]);'),
+#              opacity = 1, 
+#              opacityNoHover = 0.5,
+#              arrows = TRUE,
+#              zoom = TRUE)
+#  
+# 
+# message("hi")
+
+
+# DT::datatable(for_table,
+#             #  extensions = c("Buttons", "Scroller"),
+#               colnames = c("Name", "Riding", "Twitter Handle", "Party"),
+#               options = list(
+#                 dom = "Blrtip"  # specify content (search box, etc)
+#                # deferRender = TRUE,
+#              #   scrollY = 300,
+#               #  scroller = TRUE,
+#               #  buttons = c('copy', 'csv', 'excel', 'pdf', 'print'))
+#               )
+#               )#%>%
+#   # DT::formatStyle("party",
+#   #                 target = "row",
+#   #                 backgroundColor = DT::styleEqual(
+#   #                   c("PCP", "NDP", "LIB", "GRN", "IND"),
+#   #                   c("lightblue", "orange", "pink", "lightgreen", "lightgray")
+#   #                   #c("#1A4782","#F37021","#D71920","#3D9B35", "#CCCCCC")
+#   #                 ))
+```

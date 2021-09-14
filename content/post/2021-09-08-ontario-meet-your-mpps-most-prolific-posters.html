@@ -1,0 +1,2322 @@
+---
+title: Ontario, Meet Your MPPs (Most Prolific Posters)
+author: Christopher Belanger
+date: '2021-09-13'
+slug: ontario-meet-your-mpps-most-prolific-posters
+categories: []
+tags:
+  - twitter
+  - rstats
+  - social media
+subtitle: 'Analyzing Social Media Use By Elected Officials in Ontario'
+summary: "How do politicians in Ontario use Twitter? Who do they talk to, and what do they talk about? In this post, we'll look at what and who politicians care about by analyzing their public statements on social media."
+authors: []
+lastmod: '2021-09-13T09:44:25-04:00'
+featured: no
+header:
+  image: "/headers/2021-09-13-twitter-queens-park.jpg"
+  caption: "Queen's Park, Toronto, as seen from Macdonald Block. Photo by Christopher Belanger, Twitter logo copyright Twitter."
+projects: []
+---
+
+<script src="/rmarkdown-libs/header-attrs/header-attrs.js"></script>
+<script src="/rmarkdown-libs/kePrint/kePrint.js"></script>
+<link href="/rmarkdown-libs/lightable/lightable.css" rel="stylesheet" />
+<script src="/rmarkdown-libs/htmlwidgets/htmlwidgets.js"></script>
+<script src="/rmarkdown-libs/plotly-binding/plotly.js"></script>
+<script src="/rmarkdown-libs/typedarray/typedarray.min.js"></script>
+<script src="/rmarkdown-libs/jquery/jquery.min.js"></script>
+<link href="/rmarkdown-libs/crosstalk/css/crosstalk.css" rel="stylesheet" />
+<script src="/rmarkdown-libs/crosstalk/js/crosstalk.min.js"></script>
+<link href="/rmarkdown-libs/plotly-htmlwidgets-css/plotly-htmlwidgets.css" rel="stylesheet" />
+<script src="/rmarkdown-libs/plotly-main/plotly-latest.min.js"></script>
+<script src="/rmarkdown-libs/d3/d3.min.js"></script>
+<script src="/rmarkdown-libs/forceNetwork-binding/forceNetwork.js"></script>
+
+
+<div id="introduction" class="section level2">
+<h2>Introduction</h2>
+<p>How do politicians in Ontario use Twitter? Who do they talk to, and what do they talk about? In this post, we’ll look at what and who politicians care about by analyzing their public statements on social media.</p>
+<p>We’ll look at how often and successfully MPPs tweet. We’ll also do some content analysis to see what different parties focus on. And we’ll do some network analysis to look for patterns in who MPPs talk to online.</p>
+<div id="basic-ontario-civics" class="section level3">
+<h3>Basic Ontario Civics</h3>
+<p>This post assumes some basic familiarity with <a href="https://en.wikipedia.org/wiki/Ontario">Ontario</a> and <a href="https://en.wikipedia.org/wiki/List_of_political_parties_in_Ontario">its political parties</a>, but we’ll do some quick reminders.</p>
+<ul>
+<li>Our elected politicians are called Members of Provincial Parliament (MPPs).<br />
+</li>
+<li>The Progressive Conservative Party (PCP) holds a majority led by Doug Ford.</li>
+<li>The New Democratic Party (NDP) is the official opposition led by Andrea Horwath.</li>
+<li>The Liberal Party (LIB) has a few seats and is apparently led by Steven Del Duca.</li>
+<li>Mike Schreiner of the Green Party (GRN) holds one seat.</li>
+<li>Once elected, PCP MPP Belinda Karahalios split off to create the New Blue Party (NBP), with one seat.</li>
+<li>There are also a few other, uh, <a href="https://www.cp24.com/news/mpp-rick-nicholls-booted-from-ontario-pc-caucus-after-refusing-to-get-covid-19-vaccine-1.5553865">colourful</a> <a href="https://globalnews.ca/news/7678305/constituents-call-for-mpp-randy-hillier-removal/">independent MPPs</a>.</li>
+</ul>
+<p>Belinda Karahalios appears to have <a href="https://twitter.com/KarahaliosPC">deleted her Twitter account</a>, so her past tweets are unreadable and I’ll exclude her from the analysis for simplicity. But if the New Blue Party picks up steam we could always include her in a future analysis.</p>
+</div>
+</div>
+<div id="getting-the-data" class="section level2">
+<h2>Getting the Data</h2>
+<p>We need two data sets: each MPP’s Twitter handle, then a set of tweets from each MPP.</p>
+<div id="twitter-handles" class="section level3">
+<h3>Twitter Handles</h3>
+<p>First we need to know each MPP’s Twitter handle. Strangely, the <a href="https://www.ola.org/en/members/current/contact-information">Office of the Legislative Assembly’s MPP contact page</a> doesn’t have this information, but the <a href="https://horttrades.com/mpp-twitter-handles">Horticultural Trades Association does</a>. Thanks guys!</p>
+<pre class="r"><code># manually adjust some party affiliations that weren&#39;t up to date in the original data
+ind_mpps &lt;- c(&quot;Roman Baber&quot;, &quot;Rick Nicholls&quot;, &quot;Jim Wilson&quot;, &quot;Randy Hillier&quot;)
+nbp_mpps &lt;- c(&quot;Belinda Karahalios&quot;)
+
+url &lt;- &quot;https://horttrades.com/mpp-twitter-handles&quot;
+handle_html &lt;- rvest::read_html(url)
+
+# extract the table, remove the header, then tidy them up and expand them
+# Roman Baber is now an Independent MPP
+mpp_handles &lt;- tibble::tibble(data = rvest::html_table(handle_html)) %&gt;%
+  slice(-1) %&gt;%
+  mutate(data = purrr::map(data, rename, name = 1, riding = 2, handle = 3),
+         data = purrr::map(data, select, name, riding, handle),
+         data = purrr::map(data, filter, name != &quot;NAME&quot;),
+         party = c(&quot;PCP&quot;, &quot;NDP&quot;, &quot;LIB&quot;, &quot;GRN&quot;, &quot;IND&quot;)) %&gt;%
+  unnest(data) %&gt;%
+  mutate(name = stringr::str_remove(name, &quot;Hon. &quot;)) %&gt;%
+  filter(is.na(as.numeric(name))) %&gt;% # remove some junk rows that are just numbers
+  mutate(handle_txt = stringr::str_remove(handle, &quot;@&quot;)) %&gt;%
+  mutate(party = if_else(name %in% ind_mpps, &quot;IND&quot;, party),
+         party = if_else(name %in% nbp_mpps, &quot;NBP&quot;, party)) %&gt;%
+  mutate(party = factor(party, levels = c(&quot;PCP&quot;,&quot;NDP&quot;,&quot;LIB&quot;,&quot;GRN&quot;, &quot;NBP&quot;, &quot;IND&quot;))) </code></pre>
+<p>Here’s the list of MPPs with ridings and Twitter handles according to the HTA as of September 8, 2021.</p>
+<pre class="r"><code># custom function to colour the rows to match the party.
+row_colours &lt;- function(x, brighten = 0) {
+    for (i in 1:nrow(for_table)) {
+      x &lt;- kableExtra::row_spec(x,
+                                row = i,
+                                background = party_colours(for_table$party[[i]], brighten = brighten))
+    }
+  x
+}
+
+# create a smaller data set just for the table.
+# recognize Karahalios as the sole member of the New Blue Party for this table.
+for_table &lt;- mpp_handles %&gt;%
+  select(name, riding, handle, party) %&gt;%
+  arrange(party, name)
+
+# make a nice-ish table.
+# DT::datatable() gave jQuery errors--couldn&#39;t figure out why.
+for_table %&gt;%
+  knitr::kable(col.names = c(&quot;Name&quot;, &quot;Riding&quot;, &quot;Twitter Handle&quot;, &quot;Party&quot;)) %&gt;%
+  row_colours(brighten = 120) %&gt;%
+  kableExtra::scroll_box(height = &quot;300px&quot;)</code></pre>
+<div style="border: 1px solid #ddd; padding: 0px; overflow-y: scroll; height:300px; ">
+<table>
+<thead>
+<tr>
+<th style="text-align:left;position: sticky; top:0; background-color: #FFFFFF;">
+Name
+</th>
+<th style="text-align:left;position: sticky; top:0; background-color: #FFFFFF;">
+Riding
+</th>
+<th style="text-align:left;position: sticky; top:0; background-color: #FFFFFF;">
+Twitter Handle
+</th>
+<th style="text-align:left;position: sticky; top:0; background-color: #FFFFFF;">
+Party
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Amarjot Sandhu
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Brampton West
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+<span class="citation">@sandhuamerjot1</span>
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+PCP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Amy Fee
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Kitchener South – Hespeler
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+<span class="citation">@AmyFeePC</span>
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+PCP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Andrea Khanjin
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Barrie – Innisfil
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+<span class="citation">@Andrea_Khanjin</span>
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+PCP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Aris Babikian
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Scarborough – Agincourt
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+<span class="citation">@Aris_Babikian</span>
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+PCP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Bill Walker
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Bruce – Grey – Owen Sound
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+<span class="citation">@billwalkermpp</span>
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+PCP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Billy Pang
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Markham – Unionville
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+<span class="citation">@Billy__Pang</span>
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+PCP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Caroline Mulroney
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+York – Simcoe
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+<span class="citation">@C_Mulroney</span>
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+PCP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Christina Maria Mitas
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Scarborough Centre
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+<span class="citation">@Christina_Mitas</span>
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+PCP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Christine Elliott
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Newmarket – Aurora
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+<span class="citation">@celliottability</span>
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+PCP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Christine Hogarth
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Etobicoke – Lakeshore
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+<span class="citation">@CHogarthPC</span>
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+PCP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Daisy Wai
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Richmond Hill
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+<span class="citation">@Daisy_Wai_PC</span>
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+PCP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Daryl Kramp
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Hastings – Lennox and Addington
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+<span class="citation">@darylkramp</span>
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+PCP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Dave Smith
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Peterborough – Kawartha
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+<span class="citation">@DavidSmithMP</span>
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+PCP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #92BFFA !important;">
+David Piccini
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Northumberland – Peterborough South
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+<span class="citation">@DavidPiccini</span>
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+PCP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Deepak Anand
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Mississauga – Malton
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+<span class="citation">@DeepakAnandMPP</span>
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+PCP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Donna Skelly
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Flamborough Glanbrook
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+<span class="citation">@SkellyHamilton</span>
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+PCP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Doug Downey
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Barrie
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+<span class="citation">@douglasdowney</span>
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+PCP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Doug Ford
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Etobicoke North
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+<span class="citation">@fordnation</span>
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+PCP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Effie Triantafilopoulos
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Oakville North – Burlington
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+<span class="citation">@Effie_ONB</span>
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+PCP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Ernie Hardeman
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Oxford
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+<span class="citation">@erniehardeman</span>
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+PCP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Gila Martow
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Thornhill
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+<span class="citation">@GilaMartow</span>
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+PCP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Goldie Ghamari
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Carleton
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+<span class="citation">@gghamari</span>
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+PCP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Greg Rickford
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Kenora – Rainy River
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+<span class="citation">@GregRickford</span>
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+PCP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Jane McKenna
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Burlington
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+PCP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Jeff Yurek
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Elgin – Middlesex – London
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+<span class="citation">@JeffYurekMPP</span>
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+PCP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Jeremy Roberts
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Ottawa West – Nepean
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+<span class="citation">@JR_Ottawa</span>
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+PCP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Jill Dunlop
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Simcoe North
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+<span class="citation">@JillDunlop1</span>
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+PCP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Jim McDonell
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Stormont – Dundas – South Glengarry
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+<span class="citation">@JimMcDonell</span>
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+PCP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #92BFFA !important;">
+John Yakabuski
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Renfrew – Nipissing – Pembroke
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+<span class="citation">@JYakabuskiMPP</span>
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+PCP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Kaleed Rasheed
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Mississauga East – Cooksville
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+<span class="citation">@krasheedmpp</span>
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+PCP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Kinga Surma
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Etobicoke Centre
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+<span class="citation">@KingaSurmaMPP</span>
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+PCP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Laurie Scott
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Haliburton – Kawartha Lakes – Brock
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+<span class="citation">@LaurieScottPC</span>
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+PCP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Lindsey Park
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Durham
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+<span class="citation">@lparkpc</span>
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+PCP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Lisa MacLeod
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Nepean
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+<span class="citation">@MacLeodLisa</span>
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+PCP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Lisa Thompson
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Huron – Bruce
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+<span class="citation">@LisaThompsonMPP</span>
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+PCP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Logan Kanapathi
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Markham – Thornhill
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+<span class="citation">@LoganKanapathi</span>
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+PCP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Lorne Coe
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Whitby
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+<span class="citation">@lornecoe</span>
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+PCP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Merilee Fullerton
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Kanata – Carleton
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+PCP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Michael Parsa
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Aurora – Oak Ridges – Richmond Hill
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+<span class="citation">@MichaelParsa</span>
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+PCP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Michael Tibollo
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Vaughan – Woodbridge
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+<span class="citation">@MichaelTibollo</span>
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+PCP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Mike Harris
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Kitchener – Conestoga
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+<span class="citation">@mikeharrisjrpc</span>
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+PCP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Monte McNaughton
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Lambton – Kent – Middlesex
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+<span class="citation">@MonteMcNaughton</span>
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+PCP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Natalia Kusendova
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Mississauga Centre
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+<span class="citation">@NatKusendova</span>
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+PCP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Nina Tangri
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Mississauga – Streetsville
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+<span class="citation">@ninatangri</span>
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+PCP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Norman Miller
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Parry Sound – Muskoka
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+PCP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Parm Gill
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Milton
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+<span class="citation">@parmgill</span>
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+PCP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Paul Calandra
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Markham – Stouffville
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+<span class="citation">@PaulCalandra</span>
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+PCP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Peter Bethlenfalvy
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Pickering – Uxbridge
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+<span class="citation">@PBethlenfalvy</span>
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+PCP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Prabmeet Singh Sarkaria
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Brampton South
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+<span class="citation">@PrabSarkaria</span>
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+PCP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Randy Pettapiece
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Perth – Wellington
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+<span class="citation">@RandyPettapiece</span>
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+PCP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Raymond Sung Joon Cho
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Scarborough North
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+<span class="citation">@RaymondChoPC</span>
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+PCP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Robert Bailey
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Sarnia – Lambton
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+PCP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Robin Martin
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Eglinton – Lawrence
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+<span class="citation">@RobinMartinPC</span>
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+PCP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Rod Phillips
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Ajax
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+<span class="citation">@RodPhillips01</span>
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+PCP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Ross Romano
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Sault Ste. Marie
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+<span class="citation">@RossRomanoSSM</span>
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+PCP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Rudy Cuzzetto
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Mississauga – Lakeshore
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+<span class="citation">@RudyCuzzetto</span>
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+PCP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Sam Oosterhoff
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Niagara West
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+<span class="citation">@samoosterhoff</span>
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+PCP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Sheref Sabawy
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Mississauga – Erin Mills
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+<span class="citation">@SherefSabawyPC</span>
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+PCP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Stan Cho
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Willowdale
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+<span class="citation">@StanChoMPP</span>
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+PCP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Stephen Crawford
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Oakville
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+<span class="citation">@stcrawford2</span>
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+PCP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Stephen Lecce
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+King – Vaughan
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+<span class="citation">@Sflecce</span>
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+PCP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Steve Clark
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Leeds – Grenville – Thousand Islands and Rideau Lakes
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+<span class="citation">@SteveClarkPC</span>
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+PCP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Sylvia Jones
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Dufferin – Caledon
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+PCP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Ted Arnott
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Wellington – Halton Hills
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+<span class="citation">@MPPArnottWHH</span>
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+PCP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Toby Barrett
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Haldimand – Norfolk
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+<span class="citation">@TobyBarrettHN</span>
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+PCP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Todd Smith
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Bay of Quinte
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+<span class="citation">@ToddSmithPC</span>
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+PCP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Victor Fedeli
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Nipissing
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+<span class="citation">@VictorFedeli</span>
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+PCP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Vijay Thanigaslam
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Scarborough – Rouge Park
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+<span class="citation">@VijayThaniMPP</span>
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+PCP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Vincent Ke
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Don Valley North
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+<span class="citation">@vinentkempp</span>
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+PCP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Will Bouma
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+Brantford – Brant
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+<span class="citation">@WillBoumaBrant</span>
+</td>
+<td style="text-align:left;background-color: #92BFFA !important;">
+PCP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #FFE899 !important;">
+Andrea Horwath
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+Hamilton Centre
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+<span class="citation">@AndreaHorwath</span>
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+NDP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #FFE899 !important;">
+Bhutila Karpoche
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+Parkdale – High Park
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+<span class="citation">@BhutilaKarpoche</span>
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+NDP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #FFE899 !important;">
+Catherine Fife
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+Waterloo
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+<span class="citation">@CFifeKW</span>
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+NDP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #FFE899 !important;">
+Chris Glover
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+Spadine – Fort York
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+<span class="citation">@ChrisGloverMPP</span>
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+NDP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #FFE899 !important;">
+Doly Begum
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+Scarborough Southwest
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+<span class="citation">@DolyBegum</span>
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+NDP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #FFE899 !important;">
+Faisal Hassan
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+York South – Weston
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+<span class="citation">@FaisalHassanNDP</span>
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+NDP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #FFE899 !important;">
+France Gélinas
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+Nickel Belt
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+<span class="citation">@NickelBelt</span>
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+NDP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #FFE899 !important;">
+Gilles Bisson
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+Timmins
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+<span class="citation">@BissonGilles</span>
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+NDP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #FFE899 !important;">
+Gurratan Singh
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+Brampton East
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+<span class="citation">@GurratanSingh</span>
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+NDP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #FFE899 !important;">
+Guy Bourgouin
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+Muchkegowuk – James Bay
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+<span class="citation">@BourgouinGuy</span>
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+NDP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #FFE899 !important;">
+Ian Arthur
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+Kingston and the Islands
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+<span class="citation">@IanArthurMPP</span>
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+NDP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #FFE899 !important;">
+Jamie West
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+Sudbury
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+<span class="citation">@jamiewestndp</span>
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+NDP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #FFE899 !important;">
+Jeff Burch
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+Niagara Centre
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+<span class="citation">@JeffBurch_</span>
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+NDP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #FFE899 !important;">
+Jennifer French
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+Oshawa
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+<span class="citation">@jennfrench</span>
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+NDP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #FFE899 !important;">
+Jennifer Stevens
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+St. Catharines
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+<span class="citation">@JennieStevens_</span>
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+NDP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #FFE899 !important;">
+Jessica Bell
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+University – Rosedale
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+<span class="citation">@JessicaBellTO</span>
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+NDP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #FFE899 !important;">
+Jill Andrew
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+Toronto – St. Paul’s
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+<span class="citation">@JILLSLASTWORD</span>
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+NDP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #FFE899 !important;">
+Joel Harden
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+Ottawa Centre
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+<span class="citation">@JoelHardenONDP</span>
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+NDP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #FFE899 !important;">
+John Vanthof
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+Timiskaming – Cochran
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+<span class="citation">@john_vanthof</span>
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+NDP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #FFE899 !important;">
+Judith Monteith-Farrell
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+Thunder Bay – Atiokan
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+<span class="citation">@Judith_NDP</span>
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+NDP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #FFE899 !important;">
+Kevin Yarde
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+Brampton North
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+<span class="citation">@KevinYardeNDP</span>
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+NDP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #FFE899 !important;">
+Laura Mae Lindo
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+Kitchener Centre
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+<span class="citation">@LauraMaeLindo</span>
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+NDP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #FFE899 !important;">
+Lisa Gretzky
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+Windsor West
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+<span class="citation">@LGretzky</span>
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+NDP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #FFE899 !important;">
+Marit Stiles
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+Davenport
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+<span class="citation">@maritstiles</span>
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+NDP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #FFE899 !important;">
+Michael Mantha
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+Algoma – Manitoulin
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+<span class="citation">@M_Mantha</span>
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+NDP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #FFE899 !important;">
+Monique Taylor
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+Hamilton Mountain
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+<span class="citation">@MTaylorNDP</span>
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+NDP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #FFE899 !important;">
+Paul Miller
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+Hamilton East – Stoney Creek
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+NDP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #FFE899 !important;">
+Peggy Sattler
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+London West
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+<span class="citation">@PeggySattlerNDP</span>
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+NDP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #FFE899 !important;">
+Percy Hatfield
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+Windsor – Tecumseh
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+<span class="citation">@PercyHatfield</span>
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+NDP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #FFE899 !important;">
+Peter Tabuns
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+Toronto – Danforth
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+<span class="citation">@Peter_Tabuns</span>
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+NDP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #FFE899 !important;">
+Rima Berns-McGown
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+Beaches – East York
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+<span class="citation">@beyrima</span>
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+NDP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #FFE899 !important;">
+Sandy Shaw
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+Hamilton West – Ancaster – Dundas
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+<span class="citation">@shaw_sandy</span>
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+NDP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #FFE899 !important;">
+Sara Singh
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+Brampton Centre
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+<span class="citation">@SaraSinghMPP</span>
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+NDP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #FFE899 !important;">
+Sol Mamakwa
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+Kiiwetinoong
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+<span class="citation">@solmamakwa</span>
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+NDP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #FFE899 !important;">
+Suze Morrison
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+Toronto Centre
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+<span class="citation">@SuzeMorrison</span>
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+NDP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #FFE899 !important;">
+Taras Natyshak
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+Essex
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+<span class="citation">@TarasNatyshak</span>
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+NDP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #FFE899 !important;">
+Terence Kernaghan
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+London North Centre
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+<span class="citation">@kernaghant</span>
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+NDP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #FFE899 !important;">
+Teresa J. Armstrong
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+London - Fanshawe
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+<span class="citation">@TArmstrongNDP</span>
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+NDP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #FFE899 !important;">
+Tom Rakecevic
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+Humber River – Black Creek
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+NDP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #FFE899 !important;">
+Wayne Gates
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+Niagara Falls
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+<span class="citation">@Wayne_Gates</span>
+</td>
+<td style="text-align:left;background-color: #FFE899 !important;">
+NDP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #FF9198 !important;">
+Amanda Simard
+</td>
+<td style="text-align:left;background-color: #FF9198 !important;">
+Glengarry – Prescott – Russell
+</td>
+<td style="text-align:left;background-color: #FF9198 !important;">
+<span class="citation">@ASimardL</span>
+</td>
+<td style="text-align:left;background-color: #FF9198 !important;">
+LIB
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #FF9198 !important;">
+John Fraser
+</td>
+<td style="text-align:left;background-color: #FF9198 !important;">
+Ottawa South
+</td>
+<td style="text-align:left;background-color: #FF9198 !important;">
+</td>
+<td style="text-align:left;background-color: #FF9198 !important;">
+LIB
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #FF9198 !important;">
+Kathleen Wynne
+</td>
+<td style="text-align:left;background-color: #FF9198 !important;">
+Don Valley West
+</td>
+<td style="text-align:left;background-color: #FF9198 !important;">
+<span class="citation">@Kathleen_Wynne</span>
+</td>
+<td style="text-align:left;background-color: #FF9198 !important;">
+LIB
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #FF9198 !important;">
+Lucille Collard
+</td>
+<td style="text-align:left;background-color: #FF9198 !important;">
+Ottawa – Vanier
+</td>
+<td style="text-align:left;background-color: #FF9198 !important;">
+<span class="citation">@LucilleCollard</span>
+</td>
+<td style="text-align:left;background-color: #FF9198 !important;">
+LIB
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #FF9198 !important;">
+Michael Coteau
+</td>
+<td style="text-align:left;background-color: #FF9198 !important;">
+Don Valley East
+</td>
+<td style="text-align:left;background-color: #FF9198 !important;">
+<span class="citation">@coteau</span>
+</td>
+<td style="text-align:left;background-color: #FF9198 !important;">
+LIB
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #FF9198 !important;">
+Michael Gravelle
+</td>
+<td style="text-align:left;background-color: #FF9198 !important;">
+Thunder Bay – Superior North
+</td>
+<td style="text-align:left;background-color: #FF9198 !important;">
+<span class="citation">@MichaelGravelle</span>
+</td>
+<td style="text-align:left;background-color: #FF9198 !important;">
+LIB
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #FF9198 !important;">
+Mitzie Hunter
+</td>
+<td style="text-align:left;background-color: #FF9198 !important;">
+Scarborough – Guildwood
+</td>
+<td style="text-align:left;background-color: #FF9198 !important;">
+<span class="citation">@MitzieHunter</span>
+</td>
+<td style="text-align:left;background-color: #FF9198 !important;">
+LIB
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #FF9198 !important;">
+Stephen Blais
+</td>
+<td style="text-align:left;background-color: #FF9198 !important;">
+Orleans
+</td>
+<td style="text-align:left;background-color: #FF9198 !important;">
+<span class="citation">@StephenBlais</span>
+</td>
+<td style="text-align:left;background-color: #FF9198 !important;">
+LIB
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #B5FFAD !important;">
+Mike Schreiner
+</td>
+<td style="text-align:left;background-color: #B5FFAD !important;">
+Guelph
+</td>
+<td style="text-align:left;background-color: #B5FFAD !important;">
+<span class="citation">@MikeSchreiner</span>
+</td>
+<td style="text-align:left;background-color: #B5FFAD !important;">
+GRN
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #89CDFF !important;">
+Belinda Karahalios
+</td>
+<td style="text-align:left;background-color: #89CDFF !important;">
+Cambridge
+</td>
+<td style="text-align:left;background-color: #89CDFF !important;">
+<span class="citation">@KarahaliosPC</span>
+</td>
+<td style="text-align:left;background-color: #89CDFF !important;">
+NBP
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #FFFFFF !important;">
+Jim Wilson
+</td>
+<td style="text-align:left;background-color: #FFFFFF !important;">
+Simcoe – Grey
+</td>
+<td style="text-align:left;background-color: #FFFFFF !important;">
+<span class="citation">@mppjimwilson</span>
+</td>
+<td style="text-align:left;background-color: #FFFFFF !important;">
+IND
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #FFFFFF !important;">
+Randy Hillier
+</td>
+<td style="text-align:left;background-color: #FFFFFF !important;">
+Lanark – Frontenac – Kingston
+</td>
+<td style="text-align:left;background-color: #FFFFFF !important;">
+<span class="citation">@randyhillier</span>
+</td>
+<td style="text-align:left;background-color: #FFFFFF !important;">
+IND
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #FFFFFF !important;">
+Rick Nicholls
+</td>
+<td style="text-align:left;background-color: #FFFFFF !important;">
+Chatham – Kent – Leamington
+</td>
+<td style="text-align:left;background-color: #FFFFFF !important;">
+<span class="citation">@RickNichollsCKL</span>
+</td>
+<td style="text-align:left;background-color: #FFFFFF !important;">
+IND
+</td>
+</tr>
+<tr>
+<td style="text-align:left;background-color: #FFFFFF !important;">
+Roman Baber
+</td>
+<td style="text-align:left;background-color: #FFFFFF !important;">
+York Centre
+</td>
+<td style="text-align:left;background-color: #FFFFFF !important;">
+<span class="citation">@Roman_Baber</span>
+</td>
+<td style="text-align:left;background-color: #FFFFFF !important;">
+IND
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<pre class="r"><code># clean up
+rm(for_table)</code></pre>
+<p>There may have been some additional seat changes, so for this preliminary analysis we’re relying on the data I was able to find. (For a published study we’d be a bit more careful here.)</p>
+</div>
+<div id="tweets" class="section level3">
+<h3>Tweets</h3>
+<p>I used R’s <strong>rtweets</strong> package to get as many tweets as possible for each MPP. I’m using the free Twitter API, so we’re limited here to specific information about each MPP’s past 3,200 tweets. It includes tweet texts, favourites, and mentions, so we can do a lot. But it doesn’t include replies, so unfortunately we won’t be able to find which MPPs are most consistently <a href="https://knowyourmeme.com/memes/the-ratio">ratioed</a> (which was actually my original research question).</p>
+<pre class="r"><code># doing it with a for loop because of rate limits
+# set up an empty list
+results &lt;- list()
+
+# get the tweets for each MPP one at a time.
+# we will bump up against rate limits! so monitor progress, and once it fails,
+# wait 15 minutes and then re-start it at the point of failure.
+# note that you need your own token for this code to run :)
+for (i in 1:nrow(mpp_handles)){
+  message(i)
+  result &lt;- NULL
+  result &lt;- rtweet::get_timeline(user = mpp_handles$handle_txt[[i]],
+                                 n = 3200,
+                                 token = token)
+  results[[i]] &lt;- result
+}
+
+# set up a new tibble with our results
+mpp_tweets &lt;- mpp_handles
+mpp_tweets$tweets &lt;- results
+
+# then filter out those with no tweets found, and those who found my bot&#39;s tweets
+# for some reason! likely due to a weird failure condition due to rate limits
+# then make party an ordered factor
+# also figure out which tweets are not retweets
+mpp_tweets &lt;- mpp_tweets %&gt;%
+  mutate(num_tweets_found = purrr::map_dbl(tweets, nrow)) %&gt;%#purrr::map_lgl(tweets, function(x) &quot;created_at&quot; %in% colnames(x)),
+  filter(num_tweets_found &gt; 0) %&gt;%
+  mutate(my_tweets_found = purrr::map_lgl(tweets, function(x) &quot;OttCovidApts2&quot; %in% unique(x$screen_name))) %&gt;%
+  filter(!my_tweets_found) %&gt;%
+  mutate(party = factor(party, levels = c(&quot;PCP&quot;,&quot;NDP&quot;,&quot;LIB&quot;,&quot;GRN&quot;,&quot;IND&quot;))) %&gt;%
+  mutate(tweets_no_rt = purrr::map(tweets, filter, !is_retweet),
+         num_tweets_no_rt = purrr::map_dbl(tweets_no_rt, nrow))
+
+# save our data here, since it was a pain to collect
+save.image(file = &quot;mpp_progress_test.Rdata&quot;)</code></pre>
+<p>I downloaded these tweets on September 8, 2021, so that’s the time cut-off for this analysis.</p>
+</div>
+</div>
+<div id="behaviour-how-are-mpps-using-twitter" class="section level2">
+<h2>Behaviour: How are MPPs Using Twitter?</h2>
+<p>Let’s look at a few dimensions of online behaviour: how many party members are online, how much original content they post vs. other people’s content, and how often they post and with how much reaction.</p>
+<div id="most-online-party" class="section level3">
+<h3>Most Online Party</h3>
+<p>Which party is the most online? We’ll look to see what percentage of elected MPPs have at least one public tweet:</p>
+<pre class="r"><code># figure out what % of party members have at least one public tweet
+online_stats &lt;- mpp_handles %&gt;%
+  group_by(party) %&gt;%
+  filter(party != &quot;NBP&quot;) %&gt;%
+  summarise(num_total = n()) %&gt;%
+  left_join(mpp_tweets %&gt;%
+              group_by(party) %&gt;%
+              summarise(num_online = n()),
+            by = &quot;party&quot;) %&gt;%
+  mutate(pct_online = num_online / num_total) %&gt;%
+  mutate(party = factor(party, levels = c(&quot;PCP&quot;,&quot;NDP&quot;,&quot;LIB&quot;,&quot;GRN&quot;,&quot;IND&quot;)))</code></pre>
+<pre class="r"><code># make a static plot
+online_plot &lt;- online_stats %&gt;%
+  ggplot() +
+  geom_col(aes(x=reorder(party, pct_online),
+               y = pct_online,
+               fill = party,
+       text = sprintf(&quot;Party: %s\n%% MPPs with at least one public tweet: %%%.1f&quot;,
+                      party,
+                      pct_online*100)),
+           ) +
+  scale_fill_parties +
+  theme_minimal()+
+  scale_y_continuous(label = scales::percent) +
+  coord_flip() +
+  labs(title = &quot;Which Party is the Most Online?&quot;,
+       subtitle = &quot;Percent of Ontario&#39;s party members with at least one public tweet.&quot;,
+       x = NULL,
+       y = NULL,
+       fill = &quot;Party&quot;) +
+  theme(legend.position = &quot;top&quot;)
+
+plotly::ggplotly(online_plot, tooltip = &quot;text&quot;)</code></pre>
+<div id="htmlwidget-1" style="width:672px;height:480px;" class="plotly html-widget"></div>
+<script type="application/json" data-for="htmlwidget-1">{"x":{"data":[{"orientation":"h","width":0.9,"base":0,"x":[0.857142857142857],"y":[1],"text":"Party: PCP<br />% MPPs with at least one public tweet: %85.7","type":"bar","marker":{"autocolorscale":false,"color":"rgba(26,71,130,1)","line":{"width":1.88976377952756,"color":"transparent"}},"name":"PCP","legendgroup":"PCP","showlegend":true,"xaxis":"x","yaxis":"y","hoverinfo":"text","frame":null},{"orientation":"h","width":0.9,"base":0,"x":[0.9],"y":[3],"text":"Party: NDP<br />% MPPs with at least one public tweet: %90.0","type":"bar","marker":{"autocolorscale":false,"color":"rgba(243,112,33,1)","line":{"width":1.88976377952756,"color":"transparent"}},"name":"NDP","legendgroup":"NDP","showlegend":true,"xaxis":"x","yaxis":"y","hoverinfo":"text","frame":null},{"orientation":"h","width":0.9,"base":0,"x":[0.875],"y":[2],"text":"Party: LIB<br />% MPPs with at least one public tweet: %87.5","type":"bar","marker":{"autocolorscale":false,"color":"rgba(215,25,32,1)","line":{"width":1.88976377952756,"color":"transparent"}},"name":"LIB","legendgroup":"LIB","showlegend":true,"xaxis":"x","yaxis":"y","hoverinfo":"text","frame":null},{"orientation":"h","width":0.9,"base":0,"x":[1],"y":[4],"text":"Party: GRN<br />% MPPs with at least one public tweet: %100.0","type":"bar","marker":{"autocolorscale":false,"color":"rgba(61,155,53,1)","line":{"width":1.88976377952756,"color":"transparent"}},"name":"GRN","legendgroup":"GRN","showlegend":true,"xaxis":"x","yaxis":"y","hoverinfo":"text","frame":null},{"orientation":"h","width":0.9,"base":0,"x":[1],"y":[5],"text":"Party: IND<br />% MPPs with at least one public tweet: %100.0","type":"bar","marker":{"autocolorscale":false,"color":"rgba(204,204,204,1)","line":{"width":1.88976377952756,"color":"transparent"}},"name":"IND","legendgroup":"IND","showlegend":true,"xaxis":"x","yaxis":"y","hoverinfo":"text","frame":null}],"layout":{"margin":{"t":43.7625570776256,"r":7.30593607305936,"b":25.5707762557078,"l":28.4931506849315},"font":{"color":"rgba(0,0,0,1)","family":"","size":14.6118721461187},"title":{"text":"Which Party is the Most Online?","font":{"color":"rgba(0,0,0,1)","family":"","size":17.5342465753425},"x":0,"xref":"paper"},"xaxis":{"domain":[0,1],"automargin":true,"type":"linear","autorange":false,"range":[-0.05,1.05],"tickmode":"array","ticktext":["0%","25%","50%","75%","100%"],"tickvals":[0,0.25,0.5,0.75,1],"categoryorder":"array","categoryarray":["0%","25%","50%","75%","100%"],"nticks":null,"ticks":"","tickcolor":null,"ticklen":3.65296803652968,"tickwidth":0,"showticklabels":true,"tickfont":{"color":"rgba(77,77,77,1)","family":"","size":11.689497716895},"tickangle":-0,"showline":false,"linecolor":null,"linewidth":0,"showgrid":true,"gridcolor":"rgba(235,235,235,1)","gridwidth":0.66417600664176,"zeroline":false,"anchor":"y","title":{"text":"","font":{"color":"rgba(0,0,0,1)","family":"","size":14.6118721461187}},"hoverformat":".2f"},"yaxis":{"domain":[0,1],"automargin":true,"type":"linear","autorange":false,"range":[0.4,5.6],"tickmode":"array","ticktext":["PCP","LIB","NDP","GRN","IND"],"tickvals":[1,2,3,4,5],"categoryorder":"array","categoryarray":["PCP","LIB","NDP","GRN","IND"],"nticks":null,"ticks":"","tickcolor":null,"ticklen":3.65296803652968,"tickwidth":0,"showticklabels":true,"tickfont":{"color":"rgba(77,77,77,1)","family":"","size":11.689497716895},"tickangle":-0,"showline":false,"linecolor":null,"linewidth":0,"showgrid":true,"gridcolor":"rgba(235,235,235,1)","gridwidth":0.66417600664176,"zeroline":false,"anchor":"x","title":{"text":"","font":{"color":"rgba(0,0,0,1)","family":"","size":14.6118721461187}},"hoverformat":".2f"},"shapes":[{"type":"rect","fillcolor":null,"line":{"color":null,"width":0,"linetype":[]},"yref":"paper","xref":"paper","x0":0,"x1":1,"y0":0,"y1":1}],"showlegend":true,"legend":{"bgcolor":null,"bordercolor":null,"borderwidth":0,"font":{"color":"rgba(0,0,0,1)","family":"","size":11.689497716895},"y":0.96751968503937},"annotations":[{"text":"Party","x":1.02,"y":1,"showarrow":false,"ax":0,"ay":0,"font":{"color":"rgba(0,0,0,1)","family":"","size":14.6118721461187},"xref":"paper","yref":"paper","textangle":-0,"xanchor":"left","yanchor":"bottom","legendTitle":true}],"hovermode":"closest","barmode":"relative"},"config":{"doubleClick":"reset","showSendToCloud":false},"source":"A","attrs":{"1a8c83e477c3d":{"x":{},"y":{},"fill":{},"text":{},"type":"bar"}},"cur_data":"1a8c83e477c3d","visdat":{"1a8c83e477c3d":["function (y) ","x"]},"highlight":{"on":"plotly_click","persistent":false,"dynamic":false,"selectize":false,"opacityDim":0.2,"selected":{"opacity":1},"debounce":0},"shinyEvents":["plotly_hover","plotly_click","plotly_selected","plotly_relayout","plotly_brushed","plotly_brushing","plotly_clickannotation","plotly_doubleclick","plotly_deselect","plotly_afterplot","plotly_sunburstclick"],"base_url":"https://plot.ly"},"evals":[],"jsHooks":[]}</script>
+<pre class="r"><code># clean up
+rm(online_stats)
+rm(online_plot)</code></pre>
+<p>All of the independents and the one Green MPP are active on Twitter, but that feels like cheating given the small sample sizes. Of the larger parties, the NDP edges out both the Liberals and the PCs.</p>
+<p>But really, <em>all</em> parties are quite online, with over 80% of their members active on Twitter. This suggests that political Twitter could be a rich topic of study, since most MPPs are using it.</p>
+</div>
+<div id="tweets-or-retweets" class="section level3">
+<h3>Tweets or Retweets?</h3>
+<p>Let’s look at original tweets vs. retweets, to see whether MPPs are posting their own thoughts or just echoing and amplifying others. An original tweet is written by the MPP in question and posted for the first time, and a retweet is a <a href="https://help.twitter.com/en/using-twitter/retweet-faqs">“a re-posting of a Tweet,” which Twitter says “helps you and others quickly share that Tweet with all of your followers.”</a></p>
+<p>First we can find the percentage of original tweets for each MPP, and plot the results on a histogram to see the distribution of their overall behaviour.</p>
+<pre class="r"><code>mpp_tweets_orig &lt;- mpp_tweets %&gt;%
+  mutate(pct_orig = num_tweets_no_rt/num_tweets_found) %&gt;%
+  select(-tweets, -tweets_no_rt)</code></pre>
+<pre class="r"><code># make a static histogram of all MPPs together for % of original tweets,
+# then make it interactive
+# thanks to this SO answer for the inspiration
+# https://stackoverflow.com/questions/61109849/is-there-a-way-to-add-the-bin-range-label-into-the-tooltip-for-a-histogram-using
+plot_step1 &lt;- ggplot_build(
+  mpp_tweets_orig %&gt;% 
+  ggplot() + 
+  geom_histogram(aes(x=pct_orig), 
+                 bins = 11,
+                 fill = &quot;darkgrey&quot;,
+                 colour = &quot;darkgrey&quot;)
+)$data[[1]]
+
+plot_step2 &lt;- plot_step1 %&gt;% {
+  ggplot(data = .,
+         aes(x=factor(x), 
+             y = count, 
+             text = sprintf(&quot;Count: %d\nRange: (%.1f-%.1f%%)&quot;, y, round(xmin*100,1), round(xmax*100,1)))) + 
+  scale_x_discrete(labels = sprintf(&quot;%.0f-%.0f%%&quot;, .$xmin*100, .$xmax*100)) + 
+  geom_bar(stat=&quot;identity&quot;, 
+           width = 1) + 
+  labs(title = &quot;Histogram: Percentage of Original MPP Tweets&quot;,
+       subtitle = &quot;Most MPPs have a fairly even mix of original tweets and retweets.&quot;,
+       x = &quot;% Original Tweets&quot;,
+       y = &quot;Count&quot;) +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 45 )) #, vjust = -.05))
+  }
+
+
+# make it interactive
+plotly::ggplotly(plot_step2,
+tooltip = c(&quot;text&quot;))</code></pre>
+<div id="htmlwidget-2" style="width:672px;height:480px;" class="plotly html-widget"></div>
+<script type="application/json" data-for="htmlwidget-2">{"x":{"data":[{"orientation":"v","width":[1,1,1,1,1,1,1,1,1,1,1],"base":[0,0,0,0,0,0,0,0,0,0,0],"x":[1,2,3,4,5,6,7,8,9,10,11],"y":[3,3,7,13,16,18,18,13,10,6,1],"text":["Count: 3<br />Range: (12.0-20.0%)","Count: 3<br />Range: (20.0-28.0%)","Count: 7<br />Range: (28.0-35.9%)","Count: 13<br />Range: (35.9-43.9%)","Count: 16<br />Range: (43.9-51.9%)","Count: 18<br />Range: (51.9-59.9%)","Count: 18<br />Range: (59.9-67.9%)","Count: 13<br />Range: (67.9-75.9%)","Count: 10<br />Range: (75.9-83.9%)","Count: 6<br />Range: (83.9-91.8%)","Count: 1<br />Range: (91.8-99.8%)"],"type":"bar","marker":{"autocolorscale":false,"color":"rgba(89,89,89,1)","line":{"width":1.88976377952756,"color":"transparent"}},"showlegend":false,"xaxis":"x","yaxis":"y","hoverinfo":"text","frame":null}],"layout":{"margin":{"t":43.7625570776256,"r":7.30593607305936,"b":50.8458187739088,"l":37.2602739726027},"font":{"color":"rgba(0,0,0,1)","family":"","size":14.6118721461187},"title":{"text":"Histogram: Percentage of Original MPP Tweets","font":{"color":"rgba(0,0,0,1)","family":"","size":17.5342465753425},"x":0,"xref":"paper"},"xaxis":{"domain":[0,1],"automargin":true,"type":"linear","autorange":false,"range":[0.4,11.6],"tickmode":"array","ticktext":["12-20%","20-28%","28-36%","36-44%","44-52%","52-60%","60-68%","68-76%","76-84%","84-92%","92-100%"],"tickvals":[1,2,3,4,5,6,7,8,9,10,11],"categoryorder":"array","categoryarray":["12-20%","20-28%","28-36%","36-44%","44-52%","52-60%","60-68%","68-76%","76-84%","84-92%","92-100%"],"nticks":null,"ticks":"","tickcolor":null,"ticklen":3.65296803652968,"tickwidth":0,"showticklabels":true,"tickfont":{"color":"rgba(77,77,77,1)","family":"","size":11.689497716895},"tickangle":-45,"showline":false,"linecolor":null,"linewidth":0,"showgrid":true,"gridcolor":"rgba(235,235,235,1)","gridwidth":0.66417600664176,"zeroline":false,"anchor":"y","title":{"text":"% Original Tweets","font":{"color":"rgba(0,0,0,1)","family":"","size":14.6118721461187}},"hoverformat":".2f"},"yaxis":{"domain":[0,1],"automargin":true,"type":"linear","autorange":false,"range":[-0.9,18.9],"tickmode":"array","ticktext":["0","5","10","15"],"tickvals":[0,5,10,15],"categoryorder":"array","categoryarray":["0","5","10","15"],"nticks":null,"ticks":"","tickcolor":null,"ticklen":3.65296803652968,"tickwidth":0,"showticklabels":true,"tickfont":{"color":"rgba(77,77,77,1)","family":"","size":11.689497716895},"tickangle":-0,"showline":false,"linecolor":null,"linewidth":0,"showgrid":true,"gridcolor":"rgba(235,235,235,1)","gridwidth":0.66417600664176,"zeroline":false,"anchor":"x","title":{"text":"Count","font":{"color":"rgba(0,0,0,1)","family":"","size":14.6118721461187}},"hoverformat":".2f"},"shapes":[{"type":"rect","fillcolor":null,"line":{"color":null,"width":0,"linetype":[]},"yref":"paper","xref":"paper","x0":0,"x1":1,"y0":0,"y1":1}],"showlegend":false,"legend":{"bgcolor":null,"bordercolor":null,"borderwidth":0,"font":{"color":"rgba(0,0,0,1)","family":"","size":11.689497716895}},"hovermode":"closest","barmode":"relative"},"config":{"doubleClick":"reset","showSendToCloud":false},"source":"A","attrs":{"1a8c82599468":{"x":{},"y":{},"text":{},"type":"bar"}},"cur_data":"1a8c82599468","visdat":{"1a8c82599468":["function (y) ","x"]},"highlight":{"on":"plotly_click","persistent":false,"dynamic":false,"selectize":false,"opacityDim":0.2,"selected":{"opacity":1},"debounce":0},"shinyEvents":["plotly_hover","plotly_click","plotly_selected","plotly_relayout","plotly_brushed","plotly_brushing","plotly_clickannotation","plotly_doubleclick","plotly_deselect","plotly_afterplot","plotly_sunburstclick"],"base_url":"https://plot.ly"},"evals":[],"jsHooks":[]}</script>
+<pre class="r"><code># clean up
+rm(plot_step1)
+rm(plot_step2)</code></pre>
+<p>Most MPPs have slightly more than 50% original tweets, meaning they write about one original tweet for each retweet. But some do almost nothing but retweet, and some post almost only original content.</p>
+<p>Let’s see if there is an obvious difference in tweet/retweet behaviour across the parties with a set of box plots.</p>
+<pre class="r"><code># make a set of static boxplots by party for % original tweets
+plot_box &lt;- mpp_tweets_orig %&gt;%
+  ggplot() +
+  geom_boxplot(aes(x=party, y = pct_orig, fill = party)) +
+  scale_fill_parties +
+  theme_minimal() +
+  labs(title = &quot;Percentage of Tweets that are Original (Not Re-Tweets)&quot;,
+       x = NULL,
+       y = NULL,
+       fill = &quot;Party&quot;) +
+  scale_y_continuous(label = scales::percent) +
+  theme(legend.position = &quot;none&quot;)
+
+plotly::ggplotly(plot_box)</code></pre>
+<div id="htmlwidget-3" style="width:672px;height:480px;" class="plotly html-widget"></div>
+<script type="application/json" data-for="htmlwidget-3">{"x":{"data":[{"x":[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],"y":[0.575970079476391,0.764705882352941,0.71375,0.7809375,0.67689417658109,0.759073842302879,0.329042386185243,0.551583568516776,0.593935604876524,0.41119449656035,0.714419768533,0.214196372732958,0.713078848560701,0.334378920953576,0.624804259317256,0.621013133208255,0.875,0.5078125,0.885276648952798,0.723351047202251,0.511445594230166,0.7078125,0.423878488166726,0.47981220657277,0.557361675523601,0.557330827067669,0.361392405063291,0.545170365739294,0.600563909774436,0.4896875,0.435095401939318,0.731890874882408,0.852095059412133,0.612066270709597,0.386053562405255,0.781875,0.337829360100376,0.380475594493116,0.845382585751979,0.548496240601504,0.579705606013154,0.755861206627071,0.529540481400438,0.442807897210906,0.583150642029439,0.593125,0.32289383025368,0.186991869918699,0.751836103594898,0.636,0.56655183213279,0.478573662808883,0.472022507033448,0.570847669690335,0.477906612347227,0.638305446778213,0.42245153220763,0.429242329367564,0.67125,0.341724354940214],"hoverinfo":"y","type":"box","fillcolor":"rgba(26,71,130,1)","marker":{"opacity":null,"outliercolor":"rgba(0,0,0,1)","line":{"width":1.88976377952756,"color":"rgba(0,0,0,1)"},"size":5.66929133858268},"line":{"color":"rgba(51,51,51,1)","width":1.88976377952756},"name":"PCP","legendgroup":"PCP","showlegend":true,"xaxis":"x","yaxis":"y","frame":null},{"x":[2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2],"y":[0.789984350547731,0.603696741854637,0.632832080200501,0.635054773082942,0.554998433093074,0.575681604512692,0.368090452261307,0.518820577164366,0.304470146920913,0.224694453149483,0.463108320251177,0.625078173858662,0.701688555347092,0.756502663741774,0.472963951935915,0.922475773679275,0.603885929175807,0.7178517397882,0.386854460093897,0.583254938852305,0.50219298245614,0.78524538918412,0.53476821192053,0.123824451410658,0.183846637335009,0.497652582159624,0.752278376139188,0.668,0.741481713035324,0.638271218290009,0.414321450906817,0.227887944601826,0.357412060301508,0.517834793491865,0.525852585258526,0.408948685857322],"hoverinfo":"y","type":"box","fillcolor":"rgba(243,112,33,1)","marker":{"opacity":null,"outliercolor":"rgba(0,0,0,1)","line":{"width":1.88976377952756,"color":"rgba(0,0,0,1)"},"size":5.66929133858268},"line":{"color":"rgba(51,51,51,1)","width":1.88976377952756},"name":"NDP","legendgroup":"NDP","showlegend":true,"xaxis":"x","yaxis":"y","frame":null},{"x":[3,3,3,3,3,3,3],"y":[0.608015028177833,0.845205479452055,0.495306633291615,0.633406318423522,0.901531728665208,0.809628008752735,0.396173149309912],"hoverinfo":"y","type":"box","fillcolor":"rgba(215,25,32,1)","marker":{"opacity":null,"outliercolor":"rgba(0,0,0,1)","line":{"width":1.88976377952756,"color":"rgba(0,0,0,1)"},"size":5.66929133858268},"line":{"color":"rgba(51,51,51,1)","width":1.88976377952756},"name":"LIB","legendgroup":"LIB","showlegend":true,"xaxis":"x","yaxis":"y","frame":null},{"x":[4],"y":[0.641716254306295],"hoverinfo":"y","type":"box","fillcolor":"rgba(61,155,53,1)","marker":{"opacity":null,"outliercolor":"rgba(0,0,0,1)","line":{"width":1.88976377952756,"color":"rgba(0,0,0,1)"},"size":5.66929133858268},"line":{"color":"rgba(51,51,51,1)","width":1.88976377952756},"name":"GRN","legendgroup":"GRN","showlegend":true,"xaxis":"x","yaxis":"y","frame":null},{"x":[5,5,5,5],"y":[0.836268754076973,0.799043062200957,0.482296650717703,0.776991809381981],"hoverinfo":"y","type":"box","fillcolor":"rgba(204,204,204,1)","marker":{"opacity":null,"outliercolor":"rgba(0,0,0,1)","line":{"width":1.88976377952756,"color":"rgba(0,0,0,1)"},"size":5.66929133858268},"line":{"color":"rgba(51,51,51,1)","width":1.88976377952756},"name":"IND","legendgroup":"IND","showlegend":true,"xaxis":"x","yaxis":"y","frame":null}],"layout":{"margin":{"t":43.7625570776256,"r":7.30593607305936,"b":25.5707762557078,"l":28.4931506849315},"font":{"color":"rgba(0,0,0,1)","family":"","size":14.6118721461187},"title":{"text":"Percentage of Tweets that are Original (Not Re-Tweets)","font":{"color":"rgba(0,0,0,1)","family":"","size":17.5342465753425},"x":0,"xref":"paper"},"xaxis":{"domain":[0,1],"automargin":true,"type":"linear","autorange":false,"range":[0.4,5.6],"tickmode":"array","ticktext":["PCP","NDP","LIB","GRN","IND"],"tickvals":[1,2,3,4,5],"categoryorder":"array","categoryarray":["PCP","NDP","LIB","GRN","IND"],"nticks":null,"ticks":"","tickcolor":null,"ticklen":3.65296803652968,"tickwidth":0,"showticklabels":true,"tickfont":{"color":"rgba(77,77,77,1)","family":"","size":11.689497716895},"tickangle":-0,"showline":false,"linecolor":null,"linewidth":0,"showgrid":true,"gridcolor":"rgba(235,235,235,1)","gridwidth":0.66417600664176,"zeroline":false,"anchor":"y","title":{"text":"","font":{"color":"rgba(0,0,0,1)","family":"","size":14.6118721461187}},"hoverformat":".2f"},"yaxis":{"domain":[0,1],"automargin":true,"type":"linear","autorange":false,"range":[0.0838918852972275,0.962408339792706],"tickmode":"array","ticktext":["25%","50%","75%"],"tickvals":[0.25,0.5,0.75],"categoryorder":"array","categoryarray":["25%","50%","75%"],"nticks":null,"ticks":"","tickcolor":null,"ticklen":3.65296803652968,"tickwidth":0,"showticklabels":true,"tickfont":{"color":"rgba(77,77,77,1)","family":"","size":11.689497716895},"tickangle":-0,"showline":false,"linecolor":null,"linewidth":0,"showgrid":true,"gridcolor":"rgba(235,235,235,1)","gridwidth":0.66417600664176,"zeroline":false,"anchor":"x","title":{"text":"","font":{"color":"rgba(0,0,0,1)","family":"","size":14.6118721461187}},"hoverformat":".2f"},"shapes":[{"type":"rect","fillcolor":null,"line":{"color":null,"width":0,"linetype":[]},"yref":"paper","xref":"paper","x0":0,"x1":1,"y0":0,"y1":1}],"showlegend":false,"legend":{"bgcolor":null,"bordercolor":null,"borderwidth":0,"font":{"color":"rgba(0,0,0,1)","family":"","size":11.689497716895}},"hovermode":"closest","barmode":"relative"},"config":{"doubleClick":"reset","showSendToCloud":false},"source":"A","attrs":{"1a8c86c242842":{"x":{},"y":{},"fill":{},"type":"box"}},"cur_data":"1a8c86c242842","visdat":{"1a8c86c242842":["function (y) ","x"]},"highlight":{"on":"plotly_click","persistent":false,"dynamic":false,"selectize":false,"opacityDim":0.2,"selected":{"opacity":1},"debounce":0},"shinyEvents":["plotly_hover","plotly_click","plotly_selected","plotly_relayout","plotly_brushed","plotly_brushing","plotly_clickannotation","plotly_doubleclick","plotly_deselect","plotly_afterplot","plotly_sunburstclick"],"base_url":"https://plot.ly"},"evals":[],"jsHooks":[]}</script>
+<p>The boxes overlap for the three major parties, but we can still see some interesting population differences. The NDP and Conservatives have much longer tails, showing that they have members who do almost nothing but retweet, and members who produce almost exclusively original content. The Liberals have the most balanced approach, with the majority of members producing at least one original tweet for each retweet.</p>
+</div>
+<div id="tweet-volume-velocity-and-popularity" class="section level3">
+<h3>Tweet Volume, Velocity, and Popularity</h3>
+<p>Let’s look at how often MPPs tweet and how much engagement they get, defined as the number of favourites and retweets. In this analysis we’re looking only at original tweets, so MPPs won’t get credit for retweeting a 20k-like video of someone else’s cat. We want to know how much organic engagement party members get by themselves.</p>
+<p>For each active MPP, the following log-log plot shows their average engagements per tweet vs. how often they tweet on average. Moving right means tweeting more often, and moving up means getting more reactions to each tweet. The size of each circle shows how many tweets we found (with an API-imposed maximum of approximately 3,200).</p>
+<pre class="r"><code># function to find out the average tweets per day, average engagements per tweet,
+# and number of tweets, and filter out a few erroneous rows
+get_twitter_stats &lt;- function(z){
+  if (!&quot;created_at&quot; %in% colnames(z)) return (tibble::tibble(num_tweets = 0, tweets_per_day = 0, engagements_avg = 0))
+  if (&quot;OttawaCovidAptsDose2&quot; %in% z$source) return (tibble::tibble(num_tweets = 0, tweets_per_day = 0, engagements_avg = 0))
+z %&gt;%
+  mutate(timespan = max(created_at) - min(created_at),
+         timespan = as.numeric(timespan),
+         engagements = favorite_count + retweet_count) %&gt;%
+ select(timespan, engagements) %&gt;%
+  group_by(timespan) %&gt;%
+  summarise(num_tweets = n(),
+            engagements_avg = mean(engagements)) %&gt;%
+  mutate(tweets_per_day = num_tweets/timespan) %&gt;%
+  select(-timespan)
+}
+
+# get the engagement stats, then unnest them
+# also make party a factor with set levels for colouring later
+mpp_engagement &lt;- mpp_tweets %&gt;%
+  mutate(engagement_stats = purrr::map(tweets_no_rt, get_twitter_stats)) %&gt;%
+  unnest(cols = c(engagement_stats)) %&gt;%
+  select(-tweets, -tweets_no_rt)  %&gt;%
+  mutate(party = factor(party, levels = c(&quot;PCP&quot;,&quot;NDP&quot;,&quot;LIB&quot;,&quot;GRN&quot;,&quot;IND&quot;)))</code></pre>
+<pre class="r"><code># set up axes for the plot
+x_breaks &lt;- c(.14, .4, 1.4, 4, 14)
+y_breaks &lt;- c(4, 15, 60, 240, 700)
+  
+# create a static ggplot
+plot_engagement &lt;-  mpp_engagement %&gt;%
+  ggplot()  +
+  geom_segment(aes(x= median(x_breaks), xend = median(x_breaks), y = min(y_breaks), yend = max(y_breaks)), colour = &quot;black&quot;, size = 1) +
+  geom_segment(aes(x=min(x_breaks), xend = max(x_breaks), y = median(y_breaks), yend = median(y_breaks)), colour = &quot;black&quot;, size = 1) +
+  annotate(&quot;text&quot;, x = x_breaks[[2]], y = y_breaks[[2]], label = &quot;Beginners&quot;, colour = &quot;#666666&quot;, size = 10) +
+  annotate(&quot;text&quot;, x = x_breaks[[2]], y = y_breaks[[4]], label = &quot;Influencers&quot;, colour = &quot;#666666&quot;, size = 10) +
+  annotate(&quot;text&quot;, x = x_breaks[[4]], y = y_breaks[[2]], label = &quot;Tryhards&quot;, colour = &quot;#666666&quot;, size = 10) +
+  annotate(&quot;text&quot;, x = x_breaks[[4]], y = y_breaks[[4]], label = &quot;Extremely\nOnline&quot;, colour = &quot;#666666&quot;, size = 10) +
+  geom_point(aes(x=tweets_per_day, 
+             y = engagements_avg, 
+             size = num_tweets,
+             colour = party,
+             text = sprintf(&quot;%s (%s)\nAvg. Tweets/Day: %.2f\nAvg. Engagements/Tweet: %.2f\nTotal Tweets Found: %d&quot;, 
+                            name, party, 
+                            round(tweets_per_day, digits = 2),
+                            round(engagements_avg, digits = 2),
+                            num_tweets)),
+             alpha = 0.6) +
+  scale_x_continuous(trans = &quot;log&quot;
+                     , breaks = x_breaks
+                     ) +
+  scale_y_continuous(trans = &quot;log&quot;
+                     , breaks = y_breaks
+                     ) +
+  theme_minimal() +
+  scale_size(guide = &quot;none&quot;) +
+  labs(title = &quot;Original Tweets: Volume, Velocity, and Engagement&quot;,
+       x = &quot;Tweets per Day&quot;,
+       y= &quot;Avg. Engagements per Tweet&quot;,
+       colour = &quot;Party&quot;) +
+    scale_colour_discrete(type = c(&quot;#1A4782&quot;,&quot;#F37021&quot;,&quot;#D71920&quot;,&quot;#3D9B35&quot;, &quot;#CCCCCC&quot;))
+
+# make the plot interactive
+plotly::ggplotly(plot_engagement,
+                 tooltip = c(&quot;text&quot;)) %&gt;% 
+  plotly::layout(legend = list(orientation = &quot;h&quot;, x = 0.29, y = -0.2))</code></pre>
+<div id="htmlwidget-4" style="width:672px;height:480px;" class="plotly html-widget"></div>
+<script type="application/json" data-for="htmlwidget-4">{"x":{"data":[{"x":[0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213,null,0.336472236621213,0.336472236621213],"y":[1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434,null,1.38629436111989,6.5510803350434],"text":"","type":"scatter","mode":"lines","line":{"width":3.77952755905512,"color":"rgba(0,0,0,1)","dash":"solid"},"hoveron":"points","showlegend":false,"xaxis":"x","yaxis":"y","hoverinfo":"text","frame":null},{"x":[-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526,null,-1.96611285637283,2.63905732961526],"y":[4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221,null,4.0943445622221,4.0943445622221],"text":"","type":"scatter","mode":"lines","line":{"width":3.77952755905512,"color":"rgba(0,0,0,1)","dash":"solid"},"hoveron":"points","showlegend":false,"xaxis":"x","yaxis":"y","hoverinfo":"text","frame":null},{"x":[-0.916290731874155],"y":[2.70805020110221],"text":"Beginners","hovertext":"","textfont":{"size":37.7952755905512,"color":"rgba(102,102,102,1)"},"type":"scatter","mode":"text","hoveron":"points","showlegend":false,"xaxis":"x","yaxis":"y","hoverinfo":"text","frame":null},{"x":[-0.916290731874155],"y":[5.48063892334199],"text":"Influencers","hovertext":"","textfont":{"size":37.7952755905512,"color":"rgba(102,102,102,1)"},"type":"scatter","mode":"text","hoveron":"points","showlegend":false,"xaxis":"x","yaxis":"y","hoverinfo":"text","frame":null},{"x":[1.38629436111989],"y":[2.70805020110221],"text":"Tryhards","hovertext":"","textfont":{"size":37.7952755905512,"color":"rgba(102,102,102,1)"},"type":"scatter","mode":"text","hoveron":"points","showlegend":false,"xaxis":"x","yaxis":"y","hoverinfo":"text","frame":null},{"x":[1.38629436111989],"y":[5.48063892334199],"text":"Extremely<br />Online","hovertext":"","textfont":{"size":37.7952755905512,"color":"rgba(102,102,102,1)"},"type":"scatter","mode":"text","hoveron":"points","showlegend":false,"xaxis":"x","yaxis":"y","hoverinfo":"text","frame":null},{"x":[-0.109645996530704,-0.906885271355601,0.801270421237337,0.923006009569558,0.684100913295874,-0.00622842052702346,-0.168428015066271,0.928725284223061,0.353009288009811,0.800246376493477,-0.0779968987961077,0.517944590441327,1.92170999412192,0.589824883097737,0.999360985732915,1.65333717032399,0.862982182263077,1.47966696896551,0.987591920817797,0.17763984290137,0.874374009340678,-0.0769973434178647,-0.517049290189023,0.40689054284169,0.905201356774349,-0.670102802651425,1.24677196197738,1.27519213643042,1.44637236999497,0.583679576161732,0.124350951382324,0.337155704926901,1.55649508656682,-1.18799199469848,2.02806680835492,0.00619278112394442,0.271095940453124,-0.115544241560675,-0.16659687710385,-0.451376773203349,1.02949251216385,-0.233427356608934,0.25830588656098,0.822825675966188,0.0255125272244614,0.134704462770377,-0.299342301881958,0.714913378110981,0.111674782787847,0.647182889308607,1.13119567737944,0.159505821615418,0.552283796017171,0.208248208639502,1.03452277865743,1.48131397431478,0.837838559132923,0.746959676523974,0.00358288502288666,0.617731465075239],"y":[2.83635964974558,3.26763668457896,1.99002631737881,2.39156800657201,3.23623459094401,2.69143713822161,2.50956690792143,2.24579193751654,2.78181409813551,3.28110213023552,1.92206180978863,2.61921019559307,2.11831041057921,2.88752728178769,3.04297842256075,4.82859941077946,3.29847725175974,6.419839640874,2.3540879591969,2.50868664197257,2.93039873448664,2.62466859216316,2.49936993482945,1.95396988226683,2.49918496598289,2.01688587533551,2.66265449858139,4.61805758119343,3.39331701926183,2.47678606018417,2.5107411408924,1.54306284348923,3.24265619010152,2.44473434963894,3.04099523170999,3.36300464872804,2.18984549756025,3.45468725654466,3.01948889593688,1.97042280401704,2.95356270676701,2.88045405999328,2.55239463009553,2.7904408028228,2.57467583277521,3.08974943169119,1.99408805581261,3.91953418720903,2.82429652440529,2.28803531197931,2.55558316569591,2.99902872108817,2.3332514750464,2.99039176959172,2.40306324295681,2.5097997100455,2.36011138087225,2.7277189359625,3.04136037975278,2.89566608998312],"text":["Deepak Anand (PCP)<br />Avg. Tweets/Day: 0.90<br />Avg. Engagements/Tweet: 17.05<br />Total Tweets Found: 1232","Ted Arnott (PCP)<br />Avg. Tweets/Day: 0.40<br />Avg. Engagements/Tweet: 26.25<br />Total Tweets Found: 325","Aris Babikian (PCP)<br />Avg. Tweets/Day: 2.23<br />Avg. Engagements/Tweet: 7.32<br />Total Tweets Found: 2499","Toby Barrett (PCP)<br />Avg. Tweets/Day: 2.52<br />Avg. Engagements/Tweet: 10.93<br />Total Tweets Found: 2162","Peter Bethlenfalvy (PCP)<br />Avg. Tweets/Day: 1.98<br />Avg. Engagements/Tweet: 25.44<br />Total Tweets Found: 2426","Will Bouma (PCP)<br />Avg. Tweets/Day: 0.99<br />Avg. Engagements/Tweet: 14.75<br />Total Tweets Found: 1048","Paul Calandra (PCP)<br />Avg. Tweets/Day: 0.84<br />Avg. Engagements/Tweet: 12.30<br />Total Tweets Found: 1759","Raymond Sung Joon Cho (PCP)<br />Avg. Tweets/Day: 2.53<br />Avg. Engagements/Tweet: 9.45<br />Total Tweets Found: 1900","Stan Cho (PCP)<br />Avg. Tweets/Day: 1.42<br />Avg. Engagements/Tweet: 16.15<br />Total Tweets Found: 1315","Steve Clark (PCP)<br />Avg. Tweets/Day: 2.23<br />Avg. Engagements/Tweet: 26.61<br />Total Tweets Found: 2284","Lorne Coe (PCP)<br />Avg. Tweets/Day: 0.92<br />Avg. Engagements/Tweet: 6.84<br />Total Tweets Found: 685","Stephen Crawford (PCP)<br />Avg. Tweets/Day: 1.68<br />Avg. Engagements/Tweet: 13.72<br />Total Tweets Found: 2279","Rudy Cuzzetto (PCP)<br />Avg. Tweets/Day: 6.83<br />Avg. Engagements/Tweet: 8.32<br />Total Tweets Found: 1066","Doug Downey (PCP)<br />Avg. Tweets/Day: 1.80<br />Avg. Engagements/Tweet: 17.95<br />Total Tweets Found: 1995","Jill Dunlop (PCP)<br />Avg. Tweets/Day: 2.72<br />Avg. Engagements/Tweet: 20.97<br />Total Tweets Found: 2284","Christine Elliott (PCP)<br />Avg. Tweets/Day: 5.22<br />Avg. Engagements/Tweet: 125.04<br />Total Tweets Found: 2800","Victor Fedeli (PCP)<br />Avg. Tweets/Day: 2.37<br />Avg. Engagements/Tweet: 27.07<br />Total Tweets Found: 1625","Doug Ford (PCP)<br />Avg. Tweets/Day: 4.39<br />Avg. Engagements/Tweet: 613.90<br />Total Tweets Found: 2832","Goldie Ghamari (PCP)<br />Avg. Tweets/Day: 2.68<br />Avg. Engagements/Tweet: 10.53<br />Total Tweets Found: 2314","Parm Gill (PCP)<br />Avg. Tweets/Day: 1.19<br />Avg. Engagements/Tweet: 12.29<br />Total Tweets Found: 1631","Ernie Hardeman (PCP)<br />Avg. Tweets/Day: 2.40<br />Avg. Engagements/Tweet: 18.74<br />Total Tweets Found: 2265","Mike Harris (PCP)<br />Avg. Tweets/Day: 0.93<br />Avg. Engagements/Tweet: 13.80<br />Total Tweets Found: 1200","Christine Hogarth (PCP)<br />Avg. Tweets/Day: 0.60<br />Avg. Engagements/Tweet: 12.17<br />Total Tweets Found: 1533","Logan Kanapathi (PCP)<br />Avg. Tweets/Day: 1.50<br />Avg. Engagements/Tweet: 7.06<br />Total Tweets Found: 1783","Andrea Khanjin (PCP)<br />Avg. Tweets/Day: 2.47<br />Avg. Engagements/Tweet: 12.17<br />Total Tweets Found: 1779","Daryl Kramp (PCP)<br />Avg. Tweets/Day: 0.51<br />Avg. Engagements/Tweet: 7.51<br />Total Tweets Found: 1142","Natalia Kusendova (PCP)<br />Avg. Tweets/Day: 3.48<br />Avg. Engagements/Tweet: 14.33<br />Total Tweets Found: 1744","Stephen Lecce (PCP)<br />Avg. Tweets/Day: 3.58<br />Avg. Engagements/Tweet: 101.30<br />Total Tweets Found: 1986","Lisa MacLeod (PCP)<br />Avg. Tweets/Day: 4.25<br />Avg. Engagements/Tweet: 29.76<br />Total Tweets Found: 1567","Robin Martin (PCP)<br />Avg. Tweets/Day: 1.79<br />Avg. Engagements/Tweet: 11.90<br />Total Tweets Found: 1391","Gila Martow (PCP)<br />Avg. Tweets/Day: 1.13<br />Avg. Engagements/Tweet: 12.31<br />Total Tweets Found: 2334","Jim McDonell (PCP)<br />Avg. Tweets/Day: 1.40<br />Avg. Engagements/Tweet: 4.68<br />Total Tweets Found: 2725","Monte McNaughton (PCP)<br />Avg. Tweets/Day: 4.74<br />Avg. Engagements/Tweet: 25.60<br />Total Tweets Found: 1958","Christina Maria Mitas (PCP)<br />Avg. Tweets/Day: 0.30<br />Avg. Engagements/Tweet: 11.53<br />Total Tweets Found: 764","Caroline Mulroney (PCP)<br />Avg. Tweets/Day: 7.60<br />Avg. Engagements/Tweet: 20.93<br />Total Tweets Found: 2502","Sam Oosterhoff (PCP)<br />Avg. Tweets/Day: 1.01<br />Avg. Engagements/Tweet: 28.88<br />Total Tweets Found: 1216","Billy Pang (PCP)<br />Avg. Tweets/Day: 1.31<br />Avg. Engagements/Tweet: 8.93<br />Total Tweets Found: 1602","Lindsey Park (PCP)<br />Avg. Tweets/Day: 0.89<br />Avg. Engagements/Tweet: 31.65<br />Total Tweets Found: 1459","Michael Parsa (PCP)<br />Avg. Tweets/Day: 0.85<br />Avg. Engagements/Tweet: 20.48<br />Total Tweets Found: 1851","Randy Pettapiece (PCP)<br />Avg. Tweets/Day: 0.64<br />Avg. Engagements/Tweet: 7.17<br />Total Tweets Found: 1917","Rod Phillips (PCP)<br />Avg. Tweets/Day: 2.80<br />Avg. Engagements/Tweet: 19.17<br />Total Tweets Found: 1694","David Piccini (PCP)<br />Avg. Tweets/Day: 0.79<br />Avg. Engagements/Tweet: 17.82<br />Total Tweets Found: 1413","Kaleed Rasheed (PCP)<br />Avg. Tweets/Day: 1.29<br />Avg. Engagements/Tweet: 12.84<br />Total Tweets Found: 1862","Greg Rickford (PCP)<br />Avg. Tweets/Day: 2.28<br />Avg. Engagements/Tweet: 16.29<br />Total Tweets Found: 1898","Jeremy Roberts (PCP)<br />Avg. Tweets/Day: 1.03<br />Avg. Engagements/Tweet: 13.13<br />Total Tweets Found: 1031","Ross Romano (PCP)<br />Avg. Tweets/Day: 1.14<br />Avg. Engagements/Tweet: 21.97<br />Total Tweets Found: 598","Sheref Sabawy (PCP)<br />Avg. Tweets/Day: 0.74<br />Avg. Engagements/Tweet: 7.35<br />Total Tweets Found: 1945","Prabmeet Singh Sarkaria (PCP)<br />Avg. Tweets/Day: 2.04<br />Avg. Engagements/Tweet: 50.38<br />Total Tweets Found: 1077","Laurie Scott (PCP)<br />Avg. Tweets/Day: 1.12<br />Avg. Engagements/Tweet: 16.85<br />Total Tweets Found: 1809","Donna Skelly (PCP)<br />Avg. Tweets/Day: 1.91<br />Avg. Engagements/Tweet: 9.86<br />Total Tweets Found: 1530","Todd Smith (PCP)<br />Avg. Tweets/Day: 3.10<br />Avg. Engagements/Tweet: 12.88<br />Total Tweets Found: 1510","Kinga Surma (PCP)<br />Avg. Tweets/Day: 1.17<br />Avg. Engagements/Tweet: 20.07<br />Total Tweets Found: 636","Nina Tangri (PCP)<br />Avg. Tweets/Day: 1.74<br />Avg. Engagements/Tweet: 10.31<br />Total Tweets Found: 2418","Vijay Thanigaslam (PCP)<br />Avg. Tweets/Day: 1.23<br />Avg. Engagements/Tweet: 19.89<br />Total Tweets Found: 1793","Lisa Thompson (PCP)<br />Avg. Tweets/Day: 2.81<br />Avg. Engagements/Tweet: 11.06<br />Total Tweets Found: 1351","Michael Tibollo (PCP)<br />Avg. Tweets/Day: 4.40<br />Avg. Engagements/Tweet: 12.30<br />Total Tweets Found: 1825","Effie Triantafilopoulos (PCP)<br />Avg. Tweets/Day: 2.31<br />Avg. Engagements/Tweet: 10.59<br />Total Tweets Found: 1525","Bill Walker (PCP)<br />Avg. Tweets/Day: 2.11<br />Avg. Engagements/Tweet: 15.30<br />Total Tweets Found: 2148","John Yakabuski (PCP)<br />Avg. Tweets/Day: 1.00<br />Avg. Engagements/Tweet: 20.93<br />Total Tweets Found: 1086","Jeff Yurek (PCP)<br />Avg. Tweets/Day: 1.85<br />Avg. Engagements/Tweet: 18.10<br />Total Tweets Found: 1371"],"type":"scatter","mode":"markers","marker":{"autocolorscale":false,"color":"rgba(26,71,130,1)","opacity":0.6,"size":[14.885684428906,3.77952755905512,20.9740425362555,19.5852640795123,20.6828932070247,13.695362948401,17.7443280513053,18.4147874486988,15.3827270006169,20.1016780546492,10.7765200891136,20.0808350497279,13.8180377419402,18.8497060267839,20.1016780546492,22.1257967493197,17.0758591130134,22.2440179915565,20.226181388116,17.1065076320955,20.0223323475904,14.6880062195949,16.5967413092514,17.8607034007973,17.8413743925894,14.3202696724603,17.6710983882407,18.8090429017916,16.775864366273,15.8198678736012,20.3086626167159,21.845684587358,18.6818258523907,11.5061985506487,20.9859021870348,14.7872890732139,16.9577128162954,16.1979573739286,18.1853290731298,18.4935594022186,17.4241613448594,15.9434770340264,18.2371571445958,18.4054922684092,13.578093292079,9.87267214017948,18.6223901568031,13.8922731141293,17.9857009263599,16.5808160012787,16.4741367377411,10.2829258777188,20.6506809516476,17.9089102376005,15.5918104767315,18.0620787529792,16.5542297037491,19.5249201691844,13.9526082268428,15.7063842827966],"symbol":"circle","line":{"width":1.88976377952756,"color":"rgba(26,71,130,1)"}},"hoveron":"points","name":"PCP","legendgroup":"PCP","showlegend":true,"xaxis":"x","yaxis":"y","hoverinfo":"text","frame":null},{"x":[1.87719357781731,-0.122710546575415,-0.265241449009132,0.447567387832794,0.978650781741913,1.10617241755026,-1.36040445932922,0.631665366253977,-0.147915504263046,0.920624115730843,-0.218696601308401,-0.572224696987137,1.23063516135458,0.371850977245403,0.85554760933743,1.25293902115151,-0.768881443233469,1.08431980600972,0.496057929106548,0.260941992832495,1.22458069140641,-0.066104152675549,-0.370800602019999,0.971137450770854,-0.26243894142354,-1.70171732992552,0.681527901640125,0.998199843602196,-0.661719646173107,-0.592014841150072,2.16284508720488,-1.24645153239951,0.457065598653014,-0.734575367919607,-1.07665557351918,1.84622327615873],"y":[4.1254395290059,2.56532840378554,2.93019193324007,3.34076734392287,3.18130760697836,4.15124010732646,2.46897428940692,2.00655764312336,2.5282510576169,3.64410404348383,3.38219525523488,2.44555575614859,2.87082220591836,4.04544433696866,4.30338436823594,2.36111189723421,1.48307904194464,5.91729753194754,4.67762320752309,3.64463178735221,3.83865163022995,4.59573875274234,1.56309017795059,4.10149779149935,1.94473003385714,3.33986048091885,3.56041457011069,3.09378311968497,3.20109757884692,5.70059831424103,5.27552803221477,2.2621334970923,3.33806227891068,3.76881590879901,1.83965655192817,3.07464955151552],"text":["Jill Andrew (NDP)<br />Avg. Tweets/Day: 6.54<br />Avg. Engagements/Tweet: 61.90<br />Total Tweets Found: 2524","Teresa J. Armstrong (NDP)<br />Avg. Tweets/Day: 0.88<br />Avg. Engagements/Tweet: 13.00<br />Total Tweets Found: 2029","Ian Arthur (NDP)<br />Avg. Tweets/Day: 0.77<br />Avg. Engagements/Tweet: 18.73<br />Total Tweets Found: 1771","Doly Begum (NDP)<br />Avg. Tweets/Day: 1.56<br />Avg. Engagements/Tweet: 28.24<br />Total Tweets Found: 1927","Jessica Bell (NDP)<br />Avg. Tweets/Day: 2.66<br />Avg. Engagements/Tweet: 24.08<br />Total Tweets Found: 2020","Rima Berns-McGown (NDP)<br />Avg. Tweets/Day: 3.02<br />Avg. Engagements/Tweet: 63.51<br />Total Tweets Found: 1927","Gilles Bisson (NDP)<br />Avg. Tweets/Day: 0.26<br />Avg. Engagements/Tweet: 11.81<br />Total Tweets Found: 949","Guy Bourgouin (NDP)<br />Avg. Tweets/Day: 1.88<br />Avg. Engagements/Tweet: 7.44<br />Total Tweets Found: 1837","Jeff Burch (NDP)<br />Avg. Tweets/Day: 0.86<br />Avg. Engagements/Tweet: 12.53<br />Total Tweets Found: 1172","Catherine Fife (NDP)<br />Avg. Tweets/Day: 2.51<br />Avg. Engagements/Tweet: 38.25<br />Total Tweets Found: 1654","Wayne Gates (NDP)<br />Avg. Tweets/Day: 0.80<br />Avg. Engagements/Tweet: 29.44<br />Total Tweets Found: 974","France Gélinas (NDP)<br />Avg. Tweets/Day: 0.56<br />Avg. Engagements/Tweet: 11.54<br />Total Tweets Found: 717","Chris Glover (NDP)<br />Avg. Tweets/Day: 3.42<br />Avg. Engagements/Tweet: 17.65<br />Total Tweets Found: 1475","Lisa Gretzky (NDP)<br />Avg. Tweets/Day: 1.45<br />Avg. Engagements/Tweet: 57.14<br />Total Tweets Found: 1999","Joel Harden (NDP)<br />Avg. Tweets/Day: 2.35<br />Avg. Engagements/Tweet: 73.95<br />Total Tweets Found: 2244","Faisal Hassan (NDP)<br />Avg. Tweets/Day: 3.50<br />Avg. Engagements/Tweet: 10.60<br />Total Tweets Found: 2414","Percy Hatfield (NDP)<br />Avg. Tweets/Day: 0.46<br />Avg. Engagements/Tweet: 4.41<br />Total Tweets Found: 1417","Andrea Horwath (NDP)<br />Avg. Tweets/Day: 2.96<br />Avg. Engagements/Tweet: 371.41<br />Total Tweets Found: 2951","Bhutila Karpoche (NDP)<br />Avg. Tweets/Day: 1.64<br />Avg. Engagements/Tweet: 107.51<br />Total Tweets Found: 2038","Terence Kernaghan (NDP)<br />Avg. Tweets/Day: 1.30<br />Avg. Engagements/Tweet: 38.27<br />Total Tweets Found: 1325","Laura Mae Lindo (NDP)<br />Avg. Tweets/Day: 3.40<br />Avg. Engagements/Tweet: 46.46<br />Total Tweets Found: 1236","Sol Mamakwa (NDP)<br />Avg. Tweets/Day: 0.94<br />Avg. Engagements/Tweet: 99.06<br />Total Tweets Found: 1860","Michael Mantha (NDP)<br />Avg. Tweets/Day: 0.69<br />Avg. Engagements/Tweet: 4.77<br />Total Tweets Found: 1603","Suze Morrison (NDP)<br />Avg. Tweets/Day: 2.64<br />Avg. Engagements/Tweet: 60.43<br />Total Tweets Found: 2512","Judith Monteith-Farrell (NDP)<br />Avg. Tweets/Day: 0.77<br />Avg. Engagements/Tweet: 6.99<br />Total Tweets Found: 969","Taras Natyshak (NDP)<br />Avg. Tweets/Day: 0.18<br />Avg. Engagements/Tweet: 28.22<br />Total Tweets Found: 395","Peggy Sattler (NDP)<br />Avg. Tweets/Day: 1.98<br />Avg. Engagements/Tweet: 35.18<br />Total Tweets Found: 585","Sandy Shaw (NDP)<br />Avg. Tweets/Day: 2.71<br />Avg. Engagements/Tweet: 22.06<br />Total Tweets Found: 1590","Sara Singh (NDP)<br />Avg. Tweets/Day: 0.52<br />Avg. Engagements/Tweet: 24.56<br />Total Tweets Found: 1816","Gurratan Singh (NDP)<br />Avg. Tweets/Day: 0.55<br />Avg. Engagements/Tweet: 299.05<br />Total Tweets Found: 1837","Marit Stiles (NDP)<br />Avg. Tweets/Day: 8.70<br />Avg. Engagements/Tweet: 195.49<br />Total Tweets Found: 2372","Jennifer Stevens (NDP)<br />Avg. Tweets/Day: 0.29<br />Avg. Engagements/Tweet: 9.60<br />Total Tweets Found: 956","Peter Tabuns (NDP)<br />Avg. Tweets/Day: 1.58<br />Avg. Engagements/Tweet: 28.16<br />Total Tweets Found: 1307","Monique Taylor (NDP)<br />Avg. Tweets/Day: 0.48<br />Avg. Engagements/Tweet: 43.33<br />Total Tweets Found: 724","John Vanthof (NDP)<br />Avg. Tweets/Day: 0.34<br />Avg. Engagements/Tweet: 6.29<br />Total Tweets Found: 1138","Jamie West (NDP)<br />Avg. Tweets/Day: 6.34<br />Avg. Engagements/Tweet: 21.64<br />Total Tweets Found: 1655"],"type":"scatter","mode":"markers","marker":{"autocolorscale":false,"color":"rgba(243,112,33,1)","opacity":0.6,"size":[21.0726244412781,19.0023420536754,17.8026364489271,18.5396994710737,18.9620877359811,18.5396994710737,12.9914962813499,18.1190951521145,14.5120514781272,17.2233463612354,13.1742187310587,11.080877995514,16.2852584825989,18.8677433503765,19.9341810569785,20.6345517382161,15.9658167213038,22.6771653543307,19.0424902055816,15.4411817758193,14.9101473591391,18.2277476873117,16.9628716284943,21.025375454392,13.1379596564721,6.8649112523737,9.72582780026034,16.895648804503,18.0191666343765,18.1190951521145,20.4642536448829,13.0430218778334,15.3357502917688,11.145780164653,14.2944344813739,17.2284032802791],"symbol":"circle","line":{"width":1.88976377952756,"color":"rgba(243,112,33,1)"}},"hoveron":"points","name":"NDP","legendgroup":"NDP","showlegend":true,"xaxis":"x","yaxis":"y","hoverinfo":"text","frame":null},{"x":[0.387808464945549,0.663745508406104,1.08091260366364,-1.76041158466561,1.43663367881246,-0.378066695975746,0.593017925538996],"y":[3.01617879195576,2.6517106240372,5.04239139454616,1.46008392185443,3.59726994732217,3.37053953282919,5.38661937471612],"text":["Stephen Blais (LIB)<br />Avg. Tweets/Day: 1.47<br />Avg. Engagements/Tweet: 20.41<br />Total Tweets Found: 1583","Lucille Collard (LIB)<br />Avg. Tweets/Day: 1.94<br />Avg. Engagements/Tweet: 14.18<br />Total Tweets Found: 2025","Michael Coteau (LIB)<br />Avg. Tweets/Day: 2.95<br />Avg. Engagements/Tweet: 154.84<br />Total Tweets Found: 1942","Michael Gravelle (LIB)<br />Avg. Tweets/Day: 0.17<br />Avg. Engagements/Tweet: 4.31<br />Total Tweets Found: 617","Mitzie Hunter (LIB)<br />Avg. Tweets/Day: 4.21<br />Avg. Engagements/Tweet: 36.50<br />Total Tweets Found: 2590","Amanda Simard (LIB)<br />Avg. Tweets/Day: 0.69<br />Avg. Engagements/Tweet: 29.09<br />Total Tweets Found: 1263","Kathleen Wynne (LIB)<br />Avg. Tweets/Day: 1.81<br />Avg. Engagements/Tweet: 218.46<br />Total Tweets Found: 2884"],"type":"scatter","mode":"markers","marker":{"autocolorscale":false,"color":"rgba(215,25,32,1)","opacity":0.6,"size":[16.8593087985021,18.9844644027693,18.6086403969295,10.0811384871307,21.3302202974248,15.0738863265527,22.4345296829801],"symbol":"circle","line":{"width":1.88976377952756,"color":"rgba(215,25,32,1)"}},"hoveron":"points","name":"LIB","legendgroup":"LIB","showlegend":true,"xaxis":"x","yaxis":"y","hoverinfo":"text","frame":null},{"x":[1.36740570343686],"y":[4.66552720963431],"text":"Mike Schreiner (GRN)<br />Avg. Tweets/Day: 3.93<br />Avg. Engagements/Tweet: 106.22<br />Total Tweets Found: 2049","type":"scatter","mode":"markers","marker":{"autocolorscale":false,"color":"rgba(61,155,53,1)","opacity":0.6,"size":19.0914172111865,"symbol":"circle","line":{"width":1.88976377952756,"color":"rgba(61,155,53,1)"}},"hoveron":"points","name":"GRN","legendgroup":"GRN","showlegend":true,"xaxis":"x","yaxis":"y","hoverinfo":"text","frame":null},{"x":[-0.263432895767939,-0.544532994682143,2.35431698334963,-0.708286273161681],"y":[6.33707696627209,2.08689869778792,5.98469399336384,1.99721028851493],"text":["Roman Baber (IND)<br />Avg. Tweets/Day: 0.77<br />Avg. Engagements/Tweet: 565.14<br />Total Tweets Found: 1282","Rick Nicholls (IND)<br />Avg. Tweets/Day: 0.58<br />Avg. Engagements/Tweet: 8.06<br />Total Tweets Found: 2004","Randy Hillier (IND)<br />Avg. Tweets/Day: 10.53<br />Avg. Engagements/Tweet: 397.30<br />Total Tweets Found: 1512","Jim Wilson (IND)<br />Avg. Tweets/Day: 0.49<br />Avg. Engagements/Tweet: 7.37<br />Total Tweets Found: 2087"],"type":"scatter","mode":"markers","marker":{"autocolorscale":false,"color":"rgba(204,204,204,1)","opacity":0.6,"size":[15.187701355562,18.8902597273134,16.4848449717655,19.2592479545843],"symbol":"circle","line":{"width":1.88976377952756,"color":"rgba(204,204,204,1)"}},"hoveron":"points","name":"IND","legendgroup":"IND","showlegend":true,"xaxis":"x","yaxis":"y","hoverinfo":"text","frame":null}],"layout":{"margin":{"t":43.7625570776256,"r":7.30593607305936,"b":40.1826484018265,"l":43.1050228310502},"font":{"color":"rgba(0,0,0,1)","family":"","size":14.6118721461187},"title":{"text":"Original Tweets: Volume, Velocity, and Engagement","font":{"color":"rgba(0,0,0,1)","family":"","size":17.5342465753425},"x":0,"xref":"paper"},"xaxis":{"domain":[0,1],"automargin":true,"type":"linear","autorange":false,"range":[-2.19637136567224,2.86931583891466],"tickmode":"array","ticktext":["0.14","0.40","1.40","4.00","14.00"],"tickvals":[-1.96611285637283,-0.916290731874155,0.336472236621213,1.38629436111989,2.63905732961526],"categoryorder":"array","categoryarray":["0.14","0.40","1.40","4.00","14.00"],"nticks":null,"ticks":"","tickcolor":null,"ticklen":3.65296803652968,"tickwidth":0,"showticklabels":true,"tickfont":{"color":"rgba(77,77,77,1)","family":"","size":11.689497716895},"tickangle":-0,"showline":false,"linecolor":null,"linewidth":0,"showgrid":true,"gridcolor":"rgba(235,235,235,1)","gridwidth":0.66417600664176,"zeroline":false,"anchor":"y","title":{"text":"Tweets per Day","font":{"color":"rgba(0,0,0,1)","family":"","size":14.6118721461187}},"hoverformat":".2f"},"yaxis":{"domain":[0,1],"automargin":true,"type":"linear","autorange":false,"range":[1.12805506242371,6.80931963373958],"tickmode":"array","ticktext":["4","15","60","240","700"],"tickvals":[1.38629436111989,2.70805020110221,4.0943445622221,5.48063892334199,6.5510803350434],"categoryorder":"array","categoryarray":["4","15","60","240","700"],"nticks":null,"ticks":"","tickcolor":null,"ticklen":3.65296803652968,"tickwidth":0,"showticklabels":true,"tickfont":{"color":"rgba(77,77,77,1)","family":"","size":11.689497716895},"tickangle":-0,"showline":false,"linecolor":null,"linewidth":0,"showgrid":true,"gridcolor":"rgba(235,235,235,1)","gridwidth":0.66417600664176,"zeroline":false,"anchor":"x","title":{"text":"Avg. Engagements per Tweet","font":{"color":"rgba(0,0,0,1)","family":"","size":14.6118721461187}},"hoverformat":".2f"},"shapes":[{"type":"rect","fillcolor":null,"line":{"color":null,"width":0,"linetype":[]},"yref":"paper","xref":"paper","x0":0,"x1":1,"y0":0,"y1":1}],"showlegend":true,"legend":{"bgcolor":null,"bordercolor":null,"borderwidth":0,"font":{"color":"rgba(0,0,0,1)","family":"","size":11.689497716895},"y":-0.2,"orientation":"h","x":0.29},"annotations":[{"text":"Party","x":1.02,"y":1,"showarrow":false,"ax":0,"ay":0,"font":{"color":"rgba(0,0,0,1)","family":"","size":14.6118721461187},"xref":"paper","yref":"paper","textangle":-0,"xanchor":"left","yanchor":"bottom","legendTitle":true}],"hovermode":"closest","barmode":"relative"},"config":{"doubleClick":"reset","showSendToCloud":false},"source":"A","attrs":{"1a8c813aa3c59":{"x":{},"y":{},"xend":{},"yend":{},"type":"scatter"},"1a8c87c8e710d":{"x":{},"y":{},"xend":{},"yend":{}},"1a8c860fe45ff":{"x":{},"y":{}},"1a8c84d37387e":{"x":{},"y":{}},"1a8c812513f54":{"x":{},"y":{}},"1a8c824bf2ecb":{"x":{},"y":{}},"1a8c82bbd7dab":{"x":{},"y":{},"size":{},"colour":{},"text":{}}},"cur_data":"1a8c813aa3c59","visdat":{"1a8c813aa3c59":["function (y) ","x"],"1a8c87c8e710d":["function (y) ","x"],"1a8c860fe45ff":["function (y) ","x"],"1a8c84d37387e":["function (y) ","x"],"1a8c812513f54":["function (y) ","x"],"1a8c824bf2ecb":["function (y) ","x"],"1a8c82bbd7dab":["function (y) ","x"]},"highlight":{"on":"plotly_click","persistent":false,"dynamic":false,"selectize":false,"opacityDim":0.2,"selected":{"opacity":1},"debounce":0},"shinyEvents":["plotly_hover","plotly_click","plotly_selected","plotly_relayout","plotly_brushed","plotly_brushing","plotly_clickannotation","plotly_doubleclick","plotly_deselect","plotly_afterplot","plotly_sunburstclick"],"base_url":"https://plot.ly"},"evals":[],"jsHooks":[]}</script>
+<pre class="r"><code># clean up
+rm(plot_engagement)</code></pre>
+<p>Noting again the log axes, we can divide this plot into four quadrants representing four different kinds of Twitter users.</p>
+<p>The <strong>Beginners</strong> in the bottom-left quadrant are modest posters. They don’t tweet much, averaging fewer than 1.4 tweets per day, and people tend not to notice much when they do.</p>
+<p>The <strong>Extremely Online</strong> MPPs in the top-right tweet a <em>lot</em>, and people react when they do. The NDP, PC, and Green leaders are there, and Randy’s out in front tweeting up a storm.</p>
+<p>The <strong>Influencers</strong> in the top-left are a rare group who tweet infrequently but generate a big reaction. I browsed their posts, and it’s not hard to see why: they’re high-profile MPPs who make a small number of issues-focused posts.</p>
+<p>Finally, we have the <strong>Tryhards</strong> in the lower-right who post constantly but don’t get much of a reaction. These MPPs are churning out tweets every day, often in both official languages, without anyone really noticing.</p>
+</div>
+</div>
+<div id="content-what-are-mpps-tweeting-about" class="section level2">
+<h2>Content: What Are MPPs Tweeting About?</h2>
+<p>Next, let’s look at the content of these tweets. We’ll use the simple approach of dividing MPPs by party, breaking tweets into individual words, and then calculating each word’s relative frequency by party. This way we can compare word usage across parties of different sizes. If you browse the code, we’ll do this with <strong>dplyr</strong> and a few helper functions from <a href="https://www.tidytextmining.com/"><strong>tidytext</strong></a>.</p>
+<pre class="r"><code># get tidytext&#39;s stopwords and add a few more
+stopwords &lt;- tidytext::stop_words %&gt;%
+  bind_rows(tibble(word = c(&quot;t.co&quot;, &quot;amp&quot;, &quot;http&quot;, &quot;https&quot;, &quot;it’s&quot;), 
+                   lexicon = &quot;custom&quot;))
+
+# pull out the tweet texts, break into words, remove any numbers, remove
+# stopwords, group by party, then count word frequency.
+# then get the intra-party relative frequency of each word.
+word_freqs &lt;- mpp_tweets %&gt;%
+  select(party, tweets_no_rt) %&gt;%
+  mutate(text = purrr::map_chr(tweets_no_rt, function(x) pull(x, text) %&gt;% 
+                                 unlist() %&gt;% 
+                                 stringr::str_flatten(collapse = &quot; &quot;))) %&gt;%
+  select(-tweets_no_rt) %&gt;%
+  tidytext::unnest_tokens(word, text)  %&gt;%
+  filter(is.na(as.numeric(word))) %&gt;%
+  anti_join(stopwords, by = &quot;word&quot;) %&gt;%
+  group_by(word, party) %&gt;%
+  summarise(count = n()) %&gt;%
+  arrange(desc(count)) %&gt;%
+  group_by(party) %&gt;%
+  mutate(total_words = sum(count),
+         party_pct = count/total_words) %&gt;%
+  select(-total_words)
+
+# now set up some words of interest
+word_of_interest &lt;- c(&quot;onpoli&quot;, &quot;ontario&quot;, 
+                      #&quot;ford&quot;, &quot;premier&quot;,
+                      &quot;justice&quot;, &quot;crime&quot;,
+                      &quot;environment&quot;, &quot;economy&quot;
+                      )
+
+# filter for words of interest to make a smaller dataset for plotting
+ word_freqs_of_interest &lt;- word_freqs %&gt;%
+  filter (word %in% word_of_interest) </code></pre>
+<p>The following plot shows word prevalences in original tweets for each party, excluding retweets. I’ve chosen a few keywords for comparison: “Ontario” and “#onpoli”; “justice” and “crime”; and “environment” and “economy.” Note that the y-axes are different for each word, so these plots are only good for <em>relative</em> comparisons.</p>
+<pre class="r"><code># make a facet-wrapped set of bar plots for word frequency by party
+wordplot &lt;- word_freqs_of_interest %&gt;%
+  mutate(word = factor(word, levels = word_of_interest)) %&gt;%
+  ggplot() +
+  geom_col(aes(x = party, 
+               y = party_pct, 
+               fill = party,
+       text = sprintf(&quot;Word: %s\nParty: %s\nPrevalence in %s Tweets: %%%.2f&quot;, 
+                      word, party, party,
+                      (party_pct * 100)
+                      ))) +
+  facet_wrap(~word, scales = &quot;free_y&quot;, ncol = 2) +
+  theme_minimal() +
+  scale_y_continuous(labels = scales::percent)  +
+    scale_fill_discrete(type = c(&quot;#1A4782&quot;,&quot;#F37021&quot;,&quot;#D71920&quot;,&quot;#3D9B35&quot;, &quot;#CCCCCC&quot;)) +
+  theme(legend.position = &quot;bottom&quot;) +
+  labs(title = &quot;Word Prevalence in Original Tweets by MPPs&quot;,
+       x = NULL,
+       y = NULL, #&quot;% of Party Words&quot;,
+       fill = &quot;Party&quot;
+  )
+
+# make the plot interactive
+plotly::ggplotly(wordplot, width = 600,
+                 height = 500,
+                 tooltip = c(&quot;text&quot;)) %&gt;% 
+  plotly::layout(legend = list(orientation = &quot;h&quot;, x = 0.2, y = -0.05))</code></pre>
+<div id="htmlwidget-5" style="width:600px;height:500px;" class="plotly html-widget"></div>
+<script type="application/json" data-for="htmlwidget-5">{"x":{"data":[{"orientation":"v","width":0.9,"base":0,"x":[1],"y":[0.00597893120547738],"text":"Word: onpoli<br />Party: PCP<br />Prevalence in PCP Tweets: %0.60","type":"bar","marker":{"autocolorscale":false,"color":"rgba(26,71,130,1)","line":{"width":1.88976377952756,"color":"transparent"}},"name":"PCP","legendgroup":"PCP","showlegend":true,"xaxis":"x","yaxis":"y","hoverinfo":"text","frame":null},{"orientation":"v","width":0.9,"base":0,"x":[1],"y":[0.0166568077126388],"text":"Word: ontario<br />Party: PCP<br />Prevalence in PCP Tweets: %1.67","type":"bar","marker":{"autocolorscale":false,"color":"rgba(26,71,130,1)","line":{"width":1.88976377952756,"color":"transparent"}},"name":"PCP","legendgroup":"PCP","showlegend":false,"xaxis":"x2","yaxis":"y2","hoverinfo":"text","frame":null},{"orientation":"v","width":0.9,"base":0,"x":[1],"y":[0.000428549852744985],"text":"Word: justice<br />Party: PCP<br />Prevalence in PCP Tweets: %0.04","type":"bar","marker":{"autocolorscale":false,"color":"rgba(26,71,130,1)","line":{"width":1.88976377952756,"color":"transparent"}},"name":"PCP","legendgroup":"PCP","showlegend":false,"xaxis":"x","yaxis":"y3","hoverinfo":"text","frame":null},{"orientation":"v","width":0.9,"base":0,"x":[1],"y":[0.000309613109472147],"text":"Word: crime<br />Party: PCP<br />Prevalence in PCP Tweets: %0.03","type":"bar","marker":{"autocolorscale":false,"color":"rgba(26,71,130,1)","line":{"width":1.88976377952756,"color":"transparent"}},"name":"PCP","legendgroup":"PCP","showlegend":false,"xaxis":"x2","yaxis":"y4","hoverinfo":"text","frame":null},{"orientation":"v","width":0.9,"base":0,"x":[1],"y":[0.000616079744254537],"text":"Word: environment<br />Party: PCP<br />Prevalence in PCP Tweets: %0.06","type":"bar","marker":{"autocolorscale":false,"color":"rgba(26,71,130,1)","line":{"width":1.88976377952756,"color":"transparent"}},"name":"PCP","legendgroup":"PCP","showlegend":false,"xaxis":"x","yaxis":"y5","hoverinfo":"text","frame":null},{"orientation":"v","width":0.9,"base":0,"x":[1],"y":[0.000977924333576661],"text":"Word: economy<br />Party: PCP<br />Prevalence in PCP Tweets: %0.10","type":"bar","marker":{"autocolorscale":false,"color":"rgba(26,71,130,1)","line":{"width":1.88976377952756,"color":"transparent"}},"name":"PCP","legendgroup":"PCP","showlegend":false,"xaxis":"x2","yaxis":"y6","hoverinfo":"text","frame":null},{"orientation":"v","width":0.9,"base":0,"x":[2],"y":[0.0166654472537788],"text":"Word: onpoli<br />Party: NDP<br />Prevalence in NDP Tweets: %1.67","type":"bar","marker":{"autocolorscale":false,"color":"rgba(243,112,33,1)","line":{"width":1.88976377952756,"color":"transparent"}},"name":"NDP","legendgroup":"NDP","showlegend":true,"xaxis":"x","yaxis":"y","hoverinfo":"text","frame":null},{"orientation":"v","width":0.9,"base":0,"x":[2],"y":[0.00657862918976834],"text":"Word: ontario<br />Party: NDP<br />Prevalence in NDP Tweets: %0.66","type":"bar","marker":{"autocolorscale":false,"color":"rgba(243,112,33,1)","line":{"width":1.88976377952756,"color":"transparent"}},"name":"NDP","legendgroup":"NDP","showlegend":false,"xaxis":"x2","yaxis":"y2","hoverinfo":"text","frame":null},{"orientation":"v","width":0.9,"base":0,"x":[2],"y":[0.000880457441043454],"text":"Word: justice<br />Party: NDP<br />Prevalence in NDP Tweets: %0.09","type":"bar","marker":{"autocolorscale":false,"color":"rgba(243,112,33,1)","line":{"width":1.88976377952756,"color":"transparent"}},"name":"NDP","legendgroup":"NDP","showlegend":false,"xaxis":"x","yaxis":"y3","hoverinfo":"text","frame":null},{"orientation":"v","width":0.9,"base":0,"x":[2],"y":[9.92064722302483e-05],"text":"Word: crime<br />Party: NDP<br />Prevalence in NDP Tweets: %0.01","type":"bar","marker":{"autocolorscale":false,"color":"rgba(243,112,33,1)","line":{"width":1.88976377952756,"color":"transparent"}},"name":"NDP","legendgroup":"NDP","showlegend":false,"xaxis":"x2","yaxis":"y4","hoverinfo":"text","frame":null},{"orientation":"v","width":0.9,"base":0,"x":[2],"y":[0.000412946940658409],"text":"Word: environment<br />Party: NDP<br />Prevalence in NDP Tweets: %0.04","type":"bar","marker":{"autocolorscale":false,"color":"rgba(243,112,33,1)","line":{"width":1.88976377952756,"color":"transparent"}},"name":"NDP","legendgroup":"NDP","showlegend":false,"xaxis":"x","yaxis":"y5","hoverinfo":"text","frame":null},{"orientation":"v","width":0.9,"base":0,"x":[2],"y":[0.000319940872942551],"text":"Word: economy<br />Party: NDP<br />Prevalence in NDP Tweets: %0.03","type":"bar","marker":{"autocolorscale":false,"color":"rgba(243,112,33,1)","line":{"width":1.88976377952756,"color":"transparent"}},"name":"NDP","legendgroup":"NDP","showlegend":false,"xaxis":"x2","yaxis":"y6","hoverinfo":"text","frame":null},{"orientation":"v","width":0.9,"base":0,"x":[3],"y":[0.021227422178573],"text":"Word: onpoli<br />Party: LIB<br />Prevalence in LIB Tweets: %2.12","type":"bar","marker":{"autocolorscale":false,"color":"rgba(215,25,32,1)","line":{"width":1.88976377952756,"color":"transparent"}},"name":"LIB","legendgroup":"LIB","showlegend":true,"xaxis":"x","yaxis":"y","hoverinfo":"text","frame":null},{"orientation":"v","width":0.9,"base":0,"x":[3],"y":[0.00926064306759469],"text":"Word: ontario<br />Party: LIB<br />Prevalence in LIB Tweets: %0.93","type":"bar","marker":{"autocolorscale":false,"color":"rgba(215,25,32,1)","line":{"width":1.88976377952756,"color":"transparent"}},"name":"LIB","legendgroup":"LIB","showlegend":false,"xaxis":"x2","yaxis":"y2","hoverinfo":"text","frame":null},{"orientation":"v","width":0.9,"base":0,"x":[3],"y":[0.00037362825056578],"text":"Word: justice<br />Party: LIB<br />Prevalence in LIB Tweets: %0.04","type":"bar","marker":{"autocolorscale":false,"color":"rgba(215,25,32,1)","line":{"width":1.88976377952756,"color":"transparent"}},"name":"LIB","legendgroup":"LIB","showlegend":false,"xaxis":"x","yaxis":"y3","hoverinfo":"text","frame":null},{"orientation":"v","width":0.9,"base":0,"x":[3],"y":[1.6012639309962e-05],"text":"Word: crime<br />Party: LIB<br />Prevalence in LIB Tweets: %0.00","type":"bar","marker":{"autocolorscale":false,"color":"rgba(215,25,32,1)","line":{"width":1.88976377952756,"color":"transparent"}},"name":"LIB","legendgroup":"LIB","showlegend":false,"xaxis":"x2","yaxis":"y4","hoverinfo":"text","frame":null},{"orientation":"v","width":0.9,"base":0,"x":[3],"y":[0.000469704086425552],"text":"Word: environment<br />Party: LIB<br />Prevalence in LIB Tweets: %0.05","type":"bar","marker":{"autocolorscale":false,"color":"rgba(215,25,32,1)","line":{"width":1.88976377952756,"color":"transparent"}},"name":"LIB","legendgroup":"LIB","showlegend":false,"xaxis":"x","yaxis":"y5","hoverinfo":"text","frame":null},{"orientation":"v","width":0.9,"base":0,"x":[3],"y":[0.00096075835859772],"text":"Word: economy<br />Party: LIB<br />Prevalence in LIB Tweets: %0.10","type":"bar","marker":{"autocolorscale":false,"color":"rgba(215,25,32,1)","line":{"width":1.88976377952756,"color":"transparent"}},"name":"LIB","legendgroup":"LIB","showlegend":false,"xaxis":"x2","yaxis":"y6","hoverinfo":"text","frame":null},{"orientation":"v","width":0.9,"base":0,"x":[4],"y":[0.029986604968339],"text":"Word: onpoli<br />Party: GRN<br />Prevalence in GRN Tweets: %3.00","type":"bar","marker":{"autocolorscale":false,"color":"rgba(61,155,53,1)","line":{"width":1.88976377952756,"color":"transparent"}},"name":"GRN","legendgroup":"GRN","showlegend":true,"xaxis":"x","yaxis":"y","hoverinfo":"text","frame":null},{"orientation":"v","width":0.9,"base":0,"x":[4],"y":[0.00703239162201656],"text":"Word: ontario<br />Party: GRN<br />Prevalence in GRN Tweets: %0.70","type":"bar","marker":{"autocolorscale":false,"color":"rgba(61,155,53,1)","line":{"width":1.88976377952756,"color":"transparent"}},"name":"GRN","legendgroup":"GRN","showlegend":false,"xaxis":"x2","yaxis":"y2","hoverinfo":"text","frame":null},{"orientation":"v","width":0.9,"base":0,"x":[4],"y":[0.000456648806624452],"text":"Word: justice<br />Party: GRN<br />Prevalence in GRN Tweets: %0.05","type":"bar","marker":{"autocolorscale":false,"color":"rgba(61,155,53,1)","line":{"width":1.88976377952756,"color":"transparent"}},"name":"GRN","legendgroup":"GRN","showlegend":false,"xaxis":"x","yaxis":"y3","hoverinfo":"text","frame":null},{"orientation":"v","width":0.9,"base":0,"x":[4],"y":[3.04432537749635e-05],"text":"Word: crime<br />Party: GRN<br />Prevalence in GRN Tweets: %0.00","type":"bar","marker":{"autocolorscale":false,"color":"rgba(61,155,53,1)","line":{"width":1.88976377952756,"color":"transparent"}},"name":"GRN","legendgroup":"GRN","showlegend":false,"xaxis":"x2","yaxis":"y4","hoverinfo":"text","frame":null},{"orientation":"v","width":0.9,"base":0,"x":[4],"y":[0.000730638090599123],"text":"Word: environment<br />Party: GRN<br />Prevalence in GRN Tweets: %0.07","type":"bar","marker":{"autocolorscale":false,"color":"rgba(61,155,53,1)","line":{"width":1.88976377952756,"color":"transparent"}},"name":"GRN","legendgroup":"GRN","showlegend":false,"xaxis":"x","yaxis":"y5","hoverinfo":"text","frame":null},{"orientation":"v","width":0.9,"base":0,"x":[4],"y":[0.000974184120798831],"text":"Word: economy<br />Party: GRN<br />Prevalence in GRN Tweets: %0.10","type":"bar","marker":{"autocolorscale":false,"color":"rgba(61,155,53,1)","line":{"width":1.88976377952756,"color":"transparent"}},"name":"GRN","legendgroup":"GRN","showlegend":false,"xaxis":"x2","yaxis":"y6","hoverinfo":"text","frame":null},{"orientation":"v","width":0.9,"base":0,"x":[5],"y":[0.0223262750430406],"text":"Word: onpoli<br />Party: IND<br />Prevalence in IND Tweets: %2.23","type":"bar","marker":{"autocolorscale":false,"color":"rgba(204,204,204,1)","line":{"width":1.88976377952756,"color":"transparent"}},"name":"IND","legendgroup":"IND","showlegend":true,"xaxis":"x","yaxis":"y","hoverinfo":"text","frame":null},{"orientation":"v","width":0.9,"base":0,"x":[5],"y":[0.00940861688945423],"text":"Word: ontario<br />Party: IND<br />Prevalence in IND Tweets: %0.94","type":"bar","marker":{"autocolorscale":false,"color":"rgba(204,204,204,1)","line":{"width":1.88976377952756,"color":"transparent"}},"name":"IND","legendgroup":"IND","showlegend":false,"xaxis":"x2","yaxis":"y2","hoverinfo":"text","frame":null},{"orientation":"v","width":0.9,"base":0,"x":[5],"y":[0.000208349325057844],"text":"Word: justice<br />Party: IND<br />Prevalence in IND Tweets: %0.02","type":"bar","marker":{"autocolorscale":false,"color":"rgba(204,204,204,1)","line":{"width":1.88976377952756,"color":"transparent"}},"name":"IND","legendgroup":"IND","showlegend":false,"xaxis":"x","yaxis":"y3","hoverinfo":"text","frame":null},{"orientation":"v","width":0.9,"base":0,"x":[5],"y":[0.000142554801355367],"text":"Word: crime<br />Party: IND<br />Prevalence in IND Tweets: %0.01","type":"bar","marker":{"autocolorscale":false,"color":"rgba(204,204,204,1)","line":{"width":1.88976377952756,"color":"transparent"}},"name":"IND","legendgroup":"IND","showlegend":false,"xaxis":"x2","yaxis":"y4","hoverinfo":"text","frame":null},{"orientation":"v","width":0.9,"base":0,"x":[5],"y":[0.000186417817157019],"text":"Word: environment<br />Party: IND<br />Prevalence in IND Tweets: %0.02","type":"bar","marker":{"autocolorscale":false,"color":"rgba(204,204,204,1)","line":{"width":1.88976377952756,"color":"transparent"}},"name":"IND","legendgroup":"IND","showlegend":false,"xaxis":"x","yaxis":"y5","hoverinfo":"text","frame":null},{"orientation":"v","width":0.9,"base":0,"x":[5],"y":[0.00038380138826445],"text":"Word: economy<br />Party: IND<br />Prevalence in IND Tweets: %0.04","type":"bar","marker":{"autocolorscale":false,"color":"rgba(204,204,204,1)","line":{"width":1.88976377952756,"color":"transparent"}},"name":"IND","legendgroup":"IND","showlegend":false,"xaxis":"x2","yaxis":"y6","hoverinfo":"text","frame":null}],"layout":{"margin":{"t":53.9908675799087,"r":7.30593607305936,"b":24.1095890410959,"l":34.337899543379},"font":{"color":"rgba(0,0,0,1)","family":"","size":14.6118721461187},"title":{"text":"Word Prevalence in Original Tweets by MPPs","font":{"color":"rgba(0,0,0,1)","family":"","size":17.5342465753425},"x":0,"xref":"paper"},"xaxis":{"domain":[0,0.44703196347032],"automargin":true,"type":"linear","autorange":false,"range":[0.4,5.6],"tickmode":"array","ticktext":["PCP","NDP","LIB","GRN","IND"],"tickvals":[1,2,3,4,5],"categoryorder":"array","categoryarray":["PCP","NDP","LIB","GRN","IND"],"nticks":null,"ticks":"","tickcolor":null,"ticklen":3.65296803652968,"tickwidth":0,"showticklabels":true,"tickfont":{"color":"rgba(77,77,77,1)","family":"","size":11.689497716895},"tickangle":-0,"showline":false,"linecolor":null,"linewidth":0,"showgrid":true,"gridcolor":"rgba(235,235,235,1)","gridwidth":0.66417600664176,"zeroline":false,"anchor":"y5","title":"","hoverformat":".2f"},"yaxis":{"domain":[0.695159817351598,1],"automargin":true,"type":"linear","autorange":false,"range":[-0.00149933024841695,0.031485935216756],"tickmode":"array","ticktext":["0.0%","1.0%","2.0%","3.0%"],"tickvals":[0,0.01,0.02,0.03],"categoryorder":"array","categoryarray":["0.0%","1.0%","2.0%","3.0%"],"nticks":null,"ticks":"","tickcolor":null,"ticklen":3.65296803652968,"tickwidth":0,"showticklabels":true,"tickfont":{"color":"rgba(77,77,77,1)","family":"","size":11.689497716895},"tickangle":-0,"showline":false,"linecolor":null,"linewidth":0,"showgrid":true,"gridcolor":"rgba(235,235,235,1)","gridwidth":0.66417600664176,"zeroline":false,"anchor":"x","title":"","hoverformat":".2f"},"shapes":[{"type":"rect","fillcolor":null,"line":{"color":null,"width":0,"linetype":[]},"yref":"paper","xref":"paper","x0":0,"x1":0.44703196347032,"y0":0.695159817351598,"y1":1},{"type":"rect","fillcolor":null,"line":{"color":null,"width":0,"linetype":[]},"yref":"paper","xref":"paper","x0":0,"x1":0.44703196347032,"y0":0,"y1":23.37899543379,"yanchor":1,"ysizemode":"pixel"},{"type":"rect","fillcolor":null,"line":{"color":null,"width":0,"linetype":[]},"yref":"paper","xref":"paper","x0":0.55296803652968,"x1":1,"y0":0.695159817351598,"y1":1},{"type":"rect","fillcolor":null,"line":{"color":null,"width":0,"linetype":[]},"yref":"paper","xref":"paper","x0":0.55296803652968,"x1":1,"y0":0,"y1":23.37899543379,"yanchor":1,"ysizemode":"pixel"},{"type":"rect","fillcolor":null,"line":{"color":null,"width":0,"linetype":[]},"yref":"paper","xref":"paper","x0":0,"x1":0.44703196347032,"y0":0.361826484018265,"y1":0.638173515981735},{"type":"rect","fillcolor":null,"line":{"color":null,"width":0,"linetype":[]},"yref":"paper","xref":"paper","x0":0,"x1":0.44703196347032,"y0":0,"y1":23.37899543379,"yanchor":0.638173515981735,"ysizemode":"pixel"},{"type":"rect","fillcolor":null,"line":{"color":null,"width":0,"linetype":[]},"yref":"paper","xref":"paper","x0":0.55296803652968,"x1":1,"y0":0.361826484018265,"y1":0.638173515981735},{"type":"rect","fillcolor":null,"line":{"color":null,"width":0,"linetype":[]},"yref":"paper","xref":"paper","x0":0.55296803652968,"x1":1,"y0":0,"y1":23.37899543379,"yanchor":0.638173515981735,"ysizemode":"pixel"},{"type":"rect","fillcolor":null,"line":{"color":null,"width":0,"linetype":[]},"yref":"paper","xref":"paper","x0":0,"x1":0.44703196347032,"y0":0,"y1":0.304840182648402},{"type":"rect","fillcolor":null,"line":{"color":null,"width":0,"linetype":[]},"yref":"paper","xref":"paper","x0":0,"x1":0.44703196347032,"y0":0,"y1":23.37899543379,"yanchor":0.304840182648402,"ysizemode":"pixel"},{"type":"rect","fillcolor":null,"line":{"color":null,"width":0,"linetype":[]},"yref":"paper","xref":"paper","x0":0.55296803652968,"x1":1,"y0":0,"y1":0.304840182648402},{"type":"rect","fillcolor":null,"line":{"color":null,"width":0,"linetype":[]},"yref":"paper","xref":"paper","x0":0.55296803652968,"x1":1,"y0":0,"y1":23.37899543379,"yanchor":0.304840182648402,"ysizemode":"pixel"}],"annotations":[{"text":"onpoli","x":0.22351598173516,"y":1,"showarrow":false,"ax":0,"ay":0,"font":{"color":"rgba(26,26,26,1)","family":"","size":11.689497716895},"xref":"paper","yref":"paper","textangle":-0,"xanchor":"center","yanchor":"bottom"},{"text":"ontario","x":0.77648401826484,"y":1,"showarrow":false,"ax":0,"ay":0,"font":{"color":"rgba(26,26,26,1)","family":"","size":11.689497716895},"xref":"paper","yref":"paper","textangle":-0,"xanchor":"center","yanchor":"bottom"},{"text":"justice","x":0.22351598173516,"y":0.638173515981735,"showarrow":false,"ax":0,"ay":0,"font":{"color":"rgba(26,26,26,1)","family":"","size":11.689497716895},"xref":"paper","yref":"paper","textangle":-0,"xanchor":"center","yanchor":"bottom"},{"text":"crime","x":0.77648401826484,"y":0.638173515981735,"showarrow":false,"ax":0,"ay":0,"font":{"color":"rgba(26,26,26,1)","family":"","size":11.689497716895},"xref":"paper","yref":"paper","textangle":-0,"xanchor":"center","yanchor":"bottom"},{"text":"environment","x":0.22351598173516,"y":0.304840182648402,"showarrow":false,"ax":0,"ay":0,"font":{"color":"rgba(26,26,26,1)","family":"","size":11.689497716895},"xref":"paper","yref":"paper","textangle":-0,"xanchor":"center","yanchor":"bottom"},{"text":"economy","x":0.77648401826484,"y":0.304840182648402,"showarrow":false,"ax":0,"ay":0,"font":{"color":"rgba(26,26,26,1)","family":"","size":11.689497716895},"xref":"paper","yref":"paper","textangle":-0,"xanchor":"center","yanchor":"bottom"},{"text":"Party","x":1.02,"y":1,"showarrow":false,"ax":0,"ay":0,"font":{"color":"rgba(0,0,0,1)","family":"","size":14.6118721461187},"xref":"paper","yref":"paper","textangle":-0,"xanchor":"left","yanchor":"bottom","legendTitle":true}],"xaxis2":{"type":"linear","autorange":false,"range":[0.4,5.6],"tickmode":"array","ticktext":["PCP","NDP","LIB","GRN","IND"],"tickvals":[1,2,3,4,5],"categoryorder":"array","categoryarray":["PCP","NDP","LIB","GRN","IND"],"nticks":null,"ticks":"","tickcolor":null,"ticklen":3.65296803652968,"tickwidth":0,"showticklabels":true,"tickfont":{"color":"rgba(77,77,77,1)","family":"","size":11.689497716895},"tickangle":-0,"showline":false,"linecolor":null,"linewidth":0,"showgrid":true,"domain":[0.55296803652968,1],"gridcolor":"rgba(235,235,235,1)","gridwidth":0.66417600664176,"zeroline":false,"anchor":"y6","title":"","hoverformat":".2f"},"yaxis2":{"type":"linear","autorange":false,"range":[-0.000832840385631938,0.0174896480982707],"tickmode":"array","ticktext":["0.00%","0.50%","1.00%","1.50%"],"tickvals":[0,0.005,0.01,0.015],"categoryorder":"array","categoryarray":["0.00%","0.50%","1.00%","1.50%"],"nticks":null,"ticks":"","tickcolor":null,"ticklen":3.65296803652968,"tickwidth":0,"showticklabels":true,"tickfont":{"color":"rgba(77,77,77,1)","family":"","size":11.689497716895},"tickangle":-0,"showline":false,"linecolor":null,"linewidth":0,"showgrid":true,"domain":[0.695159817351598,1],"gridcolor":"rgba(235,235,235,1)","gridwidth":0.66417600664176,"zeroline":false,"anchor":"x2","title":"","hoverformat":".2f"},"yaxis3":{"type":"linear","autorange":false,"range":[-4.40228720521727e-05,0.000924480313095626],"tickmode":"array","ticktext":["0.000%","0.025%","0.050%","0.075%"],"tickvals":[0,0.00025,0.0005,0.00075],"categoryorder":"array","categoryarray":["0.000%","0.025%","0.050%","0.075%"],"nticks":null,"ticks":"","tickcolor":null,"ticklen":3.65296803652968,"tickwidth":0,"showticklabels":true,"tickfont":{"color":"rgba(77,77,77,1)","family":"","size":11.689497716895},"tickangle":-0,"showline":false,"linecolor":null,"linewidth":0,"showgrid":true,"domain":[0.361826484018265,0.638173515981735],"gridcolor":"rgba(235,235,235,1)","gridwidth":0.66417600664176,"zeroline":false,"anchor":"x","title":"","hoverformat":".2f"},"yaxis4":{"type":"linear","autorange":false,"range":[-1.54806554736074e-05,0.000325093764945755],"tickmode":"array","ticktext":["0.000%","0.010%","0.020%","0.030%"],"tickvals":[0,0.0001,0.0002,0.0003],"categoryorder":"array","categoryarray":["0.000%","0.010%","0.020%","0.030%"],"nticks":null,"ticks":"","tickcolor":null,"ticklen":3.65296803652968,"tickwidth":0,"showticklabels":true,"tickfont":{"color":"rgba(77,77,77,1)","family":"","size":11.689497716895},"tickangle":-0,"showline":false,"linecolor":null,"linewidth":0,"showgrid":true,"domain":[0.361826484018265,0.638173515981735],"gridcolor":"rgba(235,235,235,1)","gridwidth":0.66417600664176,"zeroline":false,"anchor":"x2","title":"","hoverformat":".2f"},"yaxis5":{"type":"linear","autorange":false,"range":[-3.65319045299562e-05,0.000767169995129079],"tickmode":"array","ticktext":["0.000%","0.020%","0.040%","0.060%"],"tickvals":[0,0.0002,0.0004,0.0006],"categoryorder":"array","categoryarray":["0.000%","0.020%","0.040%","0.060%"],"nticks":null,"ticks":"","tickcolor":null,"ticklen":3.65296803652968,"tickwidth":0,"showticklabels":true,"tickfont":{"color":"rgba(77,77,77,1)","family":"","size":11.689497716895},"tickangle":-0,"showline":false,"linecolor":null,"linewidth":0,"showgrid":true,"domain":[0,0.304840182648402],"gridcolor":"rgba(235,235,235,1)","gridwidth":0.66417600664176,"zeroline":false,"anchor":"x","title":"","hoverformat":".2f"},"yaxis6":{"type":"linear","autorange":false,"range":[-4.8896216678833e-05,0.00102682055025549],"tickmode":"array","ticktext":["0.000%","0.025%","0.050%","0.075%","0.100%"],"tickvals":[-6.7762635780344e-21,0.00025,0.0005,0.00075,0.001],"categoryorder":"array","categoryarray":["0.000%","0.025%","0.050%","0.075%","0.100%"],"nticks":null,"ticks":"","tickcolor":null,"ticklen":3.65296803652968,"tickwidth":0,"showticklabels":true,"tickfont":{"color":"rgba(77,77,77,1)","family":"","size":11.689497716895},"tickangle":-0,"showline":false,"linecolor":null,"linewidth":0,"showgrid":true,"domain":[0,0.304840182648402],"gridcolor":"rgba(235,235,235,1)","gridwidth":0.66417600664176,"zeroline":false,"anchor":"x2","title":"","hoverformat":".2f"},"showlegend":true,"legend":{"bgcolor":null,"bordercolor":null,"borderwidth":0,"font":{"color":"rgba(0,0,0,1)","family":"","size":11.689497716895},"y":-0.05,"orientation":"h","x":0.2},"hovermode":"closest","width":600,"height":500,"barmode":"relative"},"config":{"doubleClick":"reset","showSendToCloud":false},"source":"A","attrs":{"1a8c87a325334":{"x":{},"y":{},"fill":{},"text":{},"type":"bar"}},"cur_data":"1a8c87a325334","visdat":{"1a8c87a325334":["function (y) ","x"]},"highlight":{"on":"plotly_click","persistent":false,"dynamic":false,"selectize":false,"opacityDim":0.2,"selected":{"opacity":1},"debounce":0},"shinyEvents":["plotly_hover","plotly_click","plotly_selected","plotly_relayout","plotly_brushed","plotly_brushing","plotly_clickannotation","plotly_doubleclick","plotly_deselect","plotly_afterplot","plotly_sunburstclick"],"base_url":"https://plot.ly"},"evals":[],"jsHooks":[]}</script>
+<pre class="r"><code># clean up
+rm(wordplot)</code></pre>
+<p>With those caveats, we can make a few observations:</p>
+<ul>
+<li><strong>ONPoli vs. Ontario:</strong> As suspected, the PCs use the general word “Ontario” much more than the other parties, and the other parties use “#ONPoli” much more than the PCs. This might reflect different purposes–making official statements vs. trying to start an online discussion–or it might reflect different levels of power and comfort. Why use a hashtag when everyone is already listening to you?</li>
+<li><strong>Justice vs. Crime:</strong> The PCs use the word “crime” far more than any other party, and the NDP uses the word “justice” far more. This lines up with what we might expect from a right-wing party with a populist leader and a left-wing party. The surprise here is that the Liberals and Greens barely mention crime at all. Given their third-party status, maybe they’re focusing their messaging elsewhere?</li>
+<li><strong>Environment vs. Economy:</strong> The details here surprise me. We might expect the NDP’s messaging to focus less on the economy, but I wouldn’t have expected this much of a disparity. We also might have expected the Greens to focus on the environment, but I wouldn’t have expected the PCs to focus on it so much too, or for the NDP to mention it the least out of the four parties.</li>
+</ul>
+<p>Without getting into detailed statistics, it looks pretty clear that the parties have different priorities and messaging directives when it comes to their online communications.</p>
+</div>
+<div id="networks-who-talks-to-whom" class="section level2">
+<h2>Networks: Who Talks to Whom?</h2>
+<p>Which MPPs interact with which on Twitter? We can explore this question using a <em>network diagram</em>, also called a graph, where each MPP is represented by a circle (or a “node”), and each interaction is represented by a line (or an “edge”). The thickness of each line tells us how often MPPs interact.</p>
+<p>We’ll define an interaction as replying to a tweet or mentioning another user in a tweet, since those are the two data points we get from the free Twitter API.</p>
+<p>Here we’ll use <em>directed force networks</em>, which incorporate some dynamics: nodes repel each other by default, and attract each other based on the strength of the ties between them. This can help us to see patterns in the data, as the nodes work themselves into a stable configuration. We’ll use the <strong>igraph</strong> package to make a static picture and <strong>networkD3</strong> to make an interactive simulation. For more details I’d suggest <a href="https://ona-book.org/index.html">Keith McNulty’s free book <em>Handbook of Graphs and Networks in People Analytics</em></a>.</p>
+<div id="all-ties" class="section level3">
+<h3>All Ties</h3>
+<p>First, we’ll make a directed force network for <em>all</em> interactions between MPPs. Each MPP gets a node, and every pair that has ever interacted gets a line between them. The interactive version runs quite slowly with 108 nodes and over 6,000 edges, so we’ll use <strong>igraph</strong> to make an unlabeled static image first.</p>
+<pre class="r"><code># get all of the mentions, quotes, and replies
+# put this in a function so we can use it easily with purrr::map
+get_interactions &lt;- function(tweets){
+  if (!&quot;screen_name&quot; %in% colnames(tweets)) return(&quot;&quot;)
+  message(tweets$screen_name[[1]])
+  select(tweets, ends_with(&quot;screen_name&quot;), -screen_name) %&gt;% 
+  #select(tweets, mentions_screen_name, -screen_name) %&gt;% #ends_with(&quot;screen_name&quot;)
+  unlist() %&gt;%
+  tibble(interaction_screen_name = .) %&gt;%
+  drop_na() %&gt;%
+  group_by(interaction_screen_name) %&gt;%
+  summarise(num = n()) %&gt;%
+  arrange(desc(num)) %&gt;%
+  filter(interaction_screen_name %in% mpp_handles$handle_txt)
+}
+
+# get a long list of the number of interactions from each source to each target
+mpp_interactions &lt;- mpp_tweets %&gt;% 
+  mutate(i = purrr::map(tweets, get_interactions)) %&gt;%
+  select(source_name = name, source_screen_name = handle_txt, i, source_party = party)  %&gt;%
+  rowid_to_column(var = &quot;source_id&quot;) %&gt;%
+  mutate(source_id = source_id - 1) %&gt;%
+  unnest(cols = c(i)) %&gt;%
+  #select(-i) %&gt;% 
+  drop_na() %&gt;%
+  rename(target_screen_name = interaction_screen_name)
+
+# extract just the individual node ids to add some information back to the interaction data
+mpp_node_ids &lt;- mpp_interactions %&gt;%
+  select(node_id = source_id, screen_name = source_screen_name, name = source_name, party = source_party) %&gt;%
+  distinct()
+
+# join the target data to the interactions data
+mpp_interactions &lt;- mpp_node_ids %&gt;%
+  rename(target_id = node_id, target_screen_name = screen_name, target_name = name, target_party = party) %&gt;%
+  right_join(mpp_interactions, by = c(&quot;target_screen_name&quot;)) %&gt;%
+  select(starts_with(&quot;source&quot;), num, starts_with(&quot;target&quot;)) %&gt;%
+  arrange(source_id, desc(num))</code></pre>
+<pre class="r"><code># create a function to prep the data and make a directed force graph for MPPs
+# with a given minimum number of interactions
+make_directed_force_graph &lt;- function(mpp_interactions){
+  # create links for a directed force graph
+  force_links &lt;- mpp_interactions %&gt;%
+    filter(source_id != target_id) %&gt;%
+    mutate(num = num / 1000)
+  
+  # create nodes for a directed force graph
+  force_nodes &lt;- mpp_node_ids %&gt;%
+    select(name, party) 
+  
+  # set up a colour scale
+  col_scale &lt;- c( &quot;PCP&quot;= &quot;#1A4782&quot;,
+                  &quot;NDP&quot;=  &quot;#F37021&quot;,
+                  &quot;LIB&quot;= &quot;#D71920&quot;,
+                  &quot;GRN&quot; = &quot;#3D9B35&quot;,
+                  &quot;IND&quot;=   &quot;#CCCCCC&quot;)
+  
+  
+  #[&quot;PCP&quot;, &quot;NDP&quot;, &quot;LIB&quot;, &quot;GRN&quot;, &quot;IND&quot;]
+  #[&quot;#1A4782&quot;,&quot;#F37021&quot;,&quot;#D71920&quot;,&quot;#3D9B35&quot;, &quot;#CCCCCC&quot;]
+  
+  forceNetwork(Links = force_links, #ff,
+               Nodes = force_nodes, #nn,
+               Source = &quot;source_id&quot;,
+               Target = &quot;target_id&quot;,
+               Value = &quot;num&quot;,
+               NodeID = &quot;name&quot;,
+               Group = &quot;party&quot;,
+               colourScale = JS(&#39;d3.scaleOrdinal()
+                              .domain([&quot;PCP&quot;, &quot;NDP&quot;, &quot;LIB&quot;, &quot;GRN&quot; ,&quot;IND&quot;])
+                              .range([&quot;blue&quot;,&quot;orange&quot;,&quot;red&quot;,&quot;green&quot;, &quot;gray&quot;]);&#39;),
+               opacity = 1, 
+               opacityNoHover = 0.5,
+               arrows = TRUE,
+               zoom = TRUE)
+  
+}</code></pre>
+<pre class="r"><code># now call the function with our prepared data
+#make_directed_force_graph(mpp_interactions)
+# create an igraph object from our data
+mpp_graph &lt;- mpp_interactions %&gt;%
+  select(source_name, target_name, everything()) %&gt;%
+  filter(source_name %in% mpp_node_ids$name,
+         target_name %in% mpp_node_ids$name) %&gt;%
+  igraph::graph_from_data_frame(vertices = select(mpp_node_ids, name, party))
+
+# create a reactive-force layout
+set.seed(1234)
+fr &lt;- igraph::layout_with_fr(mpp_graph)
+
+# set the colours
+V(mpp_graph)$color &lt;- party_colours(V(mpp_graph)$party)
+
+# remove labels, since we can&#39;t read them anyway!
+# make the plot
+plot(mpp_graph, layout = fr, vertex.label = NA,
+     main = &quot;Directed Force Graph for MPP Tweet Engagements&quot;)</code></pre>
+<p><img src="/post/2021-09-08-ontario-meet-your-mpps-most-prolific-posters_files/figure-html/all_network_plot-1.png" width="672" /></p>
+<p>It looks like almost everyone is interacting with everyone else, at least to some degree. I’m presenting this as an unlabeled static image because the labels were unreadable, and with so many nodes and edges it was <em>slow</em> as an interactive simulation. (There’s an interactive one down below, if you’re impatient.)</p>
+<p>But there’s some order to this plot. The graph divides roughly into three camps, with one cluster for the governing PCs and one for the opposition NDP. This suggests that MPPs within each camp interact more with each other than with the opposing party, which binds them together. However, NDP MPPs also direct a lot of attention at high-profile PC MPPs. There are quite a few cabinet members right at the border, including Christine Elliott, Lisa MacLeod, Stephen Lecce, and–naturally–Doug Ford. This suggests that although they are more tightly bound to members of their own party, they attract enough attention from the opposition to pull them to the edge of the cluster.</p>
+<p>Most Liberals and the one Green member are clustered roughly between the two main camps, suggesting that they tend to interact equally with both groups.</p>
+</div>
+<div id="only-strong-ties" class="section level3">
+<h3>Only Strong Ties</h3>
+<p>To find some deeper structure, let’s focus on <em>strong ties</em> between people who interact more often. The histogram below shows the distribution of interaction counts on a log-x axis. Most MPPs interact with a given MPP only infrequently–sometimes only once–but there’s a long right tail.</p>
+<pre class="r"><code>mpp_interactions %&gt;%
+  ggplot() +
+  geom_histogram(aes(x=num), 
+                 bins = 15,
+                 fill = &quot;darkgrey&quot;) +
+  scale_x_continuous(trans = &quot;log&quot;, breaks = c(1,10,100,3000)) +
+  theme_minimal() +
+  labs(x = &quot;Number of Interactions&quot;,
+       y = &quot;Count&quot;,
+       title = &quot;Histogram of Interaction Counts between MPPs on Twitter&quot;)</code></pre>
+<p><img src="/post/2021-09-08-ontario-meet-your-mpps-most-prolific-posters_files/figure-html/unnamed-chunk-4-1.png" width="672" /></p>
+<p>This suggests that we could learn more by focusing on these stronger ties, since people who interact more often probably have a more meaningful political relationship.</p>
+<p>Eyeballing the histogram, let’s make a network graph only including people who have interacted more than 25 times. Now the thickness of the line depends on how many interactions they’ve had.</p>
+<p>This is an interactive simulation using <strong>networkD3</strong>, so if you’re on a desktop you can use your mouse to pan around, click and drag nodes to watch them wobble around, and adjust the zoom with your mouse wheel.</p>
+<pre class="r"><code>mpp_interactions %&gt;%
+  filter(num &gt; 25) %&gt;%
+  make_directed_force_graph()</code></pre>
+<div id="htmlwidget-6" style="width:672px;height:480px;" class="forceNetwork html-widget"></div>
+<script type="application/json" data-for="htmlwidget-6">{"x":{"links":{"source":[0,0,0,0,0,0,0,0,0,0,2,2,2,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,4,4,4,4,4,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,7,7,7,7,7,7,7,7,7,7,7,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,9,9,9,9,9,9,9,9,9,9,9,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,11,11,11,11,11,11,11,11,11,11,11,11,11,11,11,11,11,11,11,11,11,11,11,11,11,11,11,12,12,12,12,12,12,12,12,12,12,12,13,13,13,13,13,13,13,13,13,13,13,13,13,14,14,14,14,14,14,14,14,14,14,14,14,15,15,15,15,15,15,15,15,15,15,15,15,15,15,15,15,15,15,15,15,16,16,16,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,18,18,18,18,18,18,18,18,18,18,18,18,18,18,19,19,19,19,19,19,19,19,19,20,20,20,20,20,20,20,20,20,20,20,21,21,21,21,21,21,21,21,21,21,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,23,23,23,23,23,23,23,23,23,23,23,23,23,23,24,24,24,24,24,24,24,24,24,24,24,24,24,24,24,24,24,24,24,24,24,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,31,31,31,31,31,31,31,31,31,32,32,32,32,32,32,32,32,32,32,32,32,33,33,33,33,33,33,33,33,33,33,33,33,33,34,34,34,34,34,34,34,34,34,35,35,35,35,35,35,35,35,35,35,35,35,35,36,36,36,36,37,37,37,37,37,37,37,37,37,37,37,37,37,37,37,37,37,37,37,37,37,37,38,38,38,38,38,38,38,38,39,39,39,39,39,39,39,39,39,39,39,39,39,39,39,39,39,39,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,41,41,41,41,41,41,41,41,41,41,41,41,41,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42,42,43,43,43,43,43,43,43,43,43,43,43,43,43,43,43,43,43,43,43,44,44,44,44,44,44,44,44,44,44,44,44,44,44,44,44,44,44,44,44,45,45,45,45,45,45,45,45,45,45,45,45,45,45,46,46,46,46,46,46,46,46,46,46,46,46,46,46,46,46,47,47,47,47,47,47,47,47,47,47,47,47,47,47,47,47,47,47,48,48,48,48,48,48,48,48,48,48,48,48,49,49,49,49,49,49,49,49,49,49,49,49,49,49,49,49,49,49,50,50,50,50,50,50,50,50,50,50,50,50,50,50,50,50,50,50,50,50,51,51,51,51,51,51,51,51,51,51,51,51,51,51,52,52,52,52,52,52,52,52,52,52,52,52,52,52,52,52,52,53,53,53,53,53,54,54,54,54,54,54,54,54,54,54,54,54,54,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,56,56,56,56,56,56,56,56,56,56,56,56,56,56,56,57,57,57,57,57,57,57,57,57,57,57,57,57,57,58,58,58,58,58,58,58,58,58,58,58,58,58,58,58,58,58,58,58,58,59,59,59,59,59,59,59,59,59,59,59,59,59,59,59,59,59,59,59,59,60,60,60,60,60,60,60,60,60,60,60,60,60,60,60,60,60,60,60,60,60,60,60,60,61,61,61,61,61,61,62,62,62,62,62,62,62,62,62,62,62,62,63,63,63,63,63,63,63,63,63,63,64,64,64,64,64,64,64,64,64,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,66,66,66,66,66,66,66,66,66,66,66,67,67,67,67,67,67,67,67,67,67,68,68,68,68,69,69,69,69,69,69,69,69,69,69,69,69,69,69,69,69,69,69,69,69,69,69,69,70,70,70,70,70,70,70,70,70,71,71,71,71,71,71,71,71,72,72,72,72,72,72,72,72,72,72,72,73,73,73,73,73,73,73,73,73,73,73,73,73,73,73,73,74,74,74,74,74,74,74,74,74,74,74,74,74,74,74,74,75,75,75,75,75,75,75,75,75,75,75,75,76,76,76,76,76,76,76,76,76,76,76,76,76,76,76,77,77,77,77,77,77,77,77,78,78,78,78,78,78,78,78,78,79,79,79,79,79,79,79,79,79,79,80,80,80,80,80,81,81,81,81,81,81,81,81,81,81,81,81,81,81,82,82,82,82,82,82,82,82,82,82,82,82,82,82,83,83,84,84,84,84,84,84,84,84,84,84,84,85,85,85,85,85,85,85,86,86,86,86,86,86,86,86,86,86,86,86,86,87,87,87,87,87,87,87,87,87,87,87,87,87,87,87,87,87,87,88,88,88,88,88,88,88,88,88,88,88,88,88,89,89,89,89,89,89,89,89,90,90,90,90,90,90,90,90,90,90,91,91,91,92,92,92,92,92,92,92,92,92,92,92,92,92,93,93,93,93,93,93,94,94,94,94,94,94,94,94,94,94,94,94,94,95,95,95,95,95,95,95,95,95,95,95,95,95,95,95,95,96,96,96,96,96,96,96,96,96,96,96,96,96,96,97,97,97,97,97,97,97,97,97,97,97,97,98,98,98,99,99,99,99,99,99,99,100,100,100,100,100,100,100,100,101,102,102,102,102,102,102,102,103,103,103,103,103,103,103,104,104,104,105,105,106,107,107,107,107,107,107],"target":[18,17,33,16,28,42,29,57,5,8,18,16,28,18,28,42,16,8,17,57,33,5,10,35,52,38,29,7,24,55,18,16,21,28,33,18,42,16,17,11,39,28,35,29,33,49,9,10,57,8,40,18,28,33,17,29,16,45,5,10,42,52,37,44,56,21,60,57,39,49,61,14,43,13,51,59,27,35,18,16,35,33,29,5,17,28,45,42,49,18,28,17,55,5,57,13,29,42,16,21,15,52,3,10,18,42,28,5,16,35,17,49,8,30,53,18,16,29,28,17,33,61,21,42,35,15,57,50,45,5,60,49,52,8,18,28,42,16,5,39,35,33,15,49,8,17,14,53,45,29,10,13,44,47,52,54,7,57,59,12,43,18,58,50,17,16,28,35,29,10,33,42,18,28,33,49,16,44,29,35,10,48,27,54,5,25,18,17,29,28,9,15,16,42,45,49,51,18,28,52,33,35,10,16,42,57,8,17,25,14,47,29,49,45,13,5,50,18,30,57,18,49,16,33,45,28,21,35,42,5,54,10,61,29,60,47,16,17,49,28,35,42,33,29,5,15,45,27,53,10,18,29,28,16,46,42,33,10,17,18,28,35,10,16,17,42,29,33,5,61,18,17,28,16,41,5,33,10,61,42,18,16,28,17,33,42,60,5,61,21,35,50,10,29,52,15,49,8,57,45,53,56,9,18,16,28,10,29,33,57,42,5,35,15,17,52,56,18,28,16,17,42,10,29,7,33,8,35,5,49,38,3,15,61,57,40,59,58,18,14,28,61,29,35,33,42,10,16,49,15,57,30,59,43,7,17,21,18,47,28,10,15,52,16,33,29,42,13,17,35,5,14,21,61,57,58,59,60,27,51,56,7,43,45,18,35,28,13,44,15,49,48,57,29,16,33,0,5,53,54,8,42,31,30,18,16,15,37,35,13,49,30,29,44,57,55,58,51,45,5,27,9,10,52,22,0,23,33,53,54,3,42,8,24,25,48,50,18,33,10,28,37,5,13,57,52,59,38,48,61,16,15,35,49,16,18,28,42,35,57,25,33,15,9,58,5,29,49,31,10,17,14,8,40,61,18,35,28,50,29,30,27,57,61,18,10,28,29,17,59,21,42,16,33,61,60,18,15,0,29,28,16,17,35,51,13,42,45,59,18,28,33,5,49,10,16,8,42,18,16,27,28,33,55,53,15,49,57,17,29,10,18,33,104,16,18,28,29,16,56,33,42,10,17,35,21,15,49,6,5,30,50,44,34,43,61,51,18,28,29,24,7,16,42,17,18,5,42,11,16,35,14,28,49,33,45,17,29,10,43,21,61,50,18,28,5,107,52,42,16,17,29,49,33,35,51,57,44,45,19,27,31,21,18,56,59,16,33,17,29,52,28,10,61,50,18,16,49,9,39,28,5,11,35,25,33,15,45,10,44,8,17,55,3,27,58,22,53,12,29,21,30,48,57,0,38,51,18,16,28,33,47,42,29,39,21,35,5,49,17,52,61,45,10,15,50,18,28,13,27,29,16,42,49,48,5,54,17,0,35,52,33,8,10,61,40,18,28,17,59,16,35,33,42,15,60,52,47,57,61,18,16,28,52,42,15,29,35,17,5,49,14,33,45,57,19,18,57,26,15,45,10,16,43,28,17,42,35,49,5,14,33,52,51,18,29,28,27,13,42,44,0,54,33,49,16,18,28,16,10,35,17,5,42,13,33,15,39,44,53,27,29,14,52,18,16,28,17,52,10,29,35,21,60,61,42,33,56,59,15,12,5,45,49,18,16,28,17,33,49,29,15,35,5,61,10,42,47,16,18,15,28,33,10,17,5,35,57,49,8,29,61,21,45,26,18,35,28,16,49,18,17,28,16,29,33,42,13,48,61,35,52,57,18,35,28,42,8,29,16,5,53,49,3,34,33,10,17,27,45,18,16,28,21,5,17,33,49,57,59,15,10,29,14,35,18,16,15,47,29,35,10,5,28,8,33,21,30,42,18,28,42,16,12,17,13,29,49,10,30,5,57,14,8,35,15,3,24,33,18,45,28,16,21,33,52,17,56,61,29,5,42,57,10,49,8,50,15,35,18,17,50,29,35,61,16,10,28,45,5,42,52,33,22,57,47,59,15,21,56,13,27,49,16,18,25,33,21,29,18,79,92,82,67,28,77,29,85,76,65,97,79,88,81,18,75,92,71,73,62,65,79,92,71,18,94,67,97,76,83,79,92,18,67,94,76,82,71,85,80,97,83,62,66,88,56,18,79,92,85,28,74,62,83,65,71,80,18,62,82,85,83,92,28,79,65,76,79,69,83,92,79,18,83,92,97,35,73,45,63,28,76,65,84,68,88,47,75,89,56,62,29,74,96,79,92,71,72,94,18,93,76,97,82,79,92,18,83,88,75,65,79,92,18,97,71,93,75,63,70,28,88,97,79,71,83,69,18,72,67,92,76,80,82,84,16,88,96,79,18,92,85,62,67,83,63,82,65,69,66,77,97,28,88,79,18,92,63,78,76,87,95,52,71,83,62,79,18,92,75,62,28,83,63,65,67,82,80,85,95,16,79,62,18,16,63,97,65,83,79,75,87,71,73,88,94,84,72,92,62,83,82,90,65,85,91,18,71,79,18,83,62,92,79,88,63,92,62,76,97,18,71,75,83,80,95,67,71,18,92,79,67,62,65,85,88,83,97,76,89,47,79,18,79,73,71,88,83,69,63,94,96,92,75,79,92,18,10,83,62,67,79,83,92,97,76,71,75,62,18,80,85,69,74,79,71,92,75,18,83,78,97,89,94,95,82,88,67,69,96,74,84,79,18,92,81,71,63,85,65,75,62,90,83,82,79,18,83,92,71,51,85,94,79,18,82,62,92,83,80,71,95,91,79,92,18,79,28,18,62,65,85,83,97,71,76,82,88,74,79,18,92,70,71,72,18,92,85,83,67,65,79,64,82,62,66,80,28,79,92,18,89,29,71,75,76,88,82,83,63,52,62,67,94,79,71,73,18,68,84,97,90,94,69,83,95,21,88,92,79,18,73,82,65,62,71,28,47,88,83,18,99,100,18,100,102,98,103,28,104,18,102,99,104,28,103,98,52,104,18,99,100,28,98,104,16,18,100,102,99,35,29,33,18,100,102,18,79,18,18,17,40,51,16,33],"value":[0.794,0.106,0.083,0.067,0.062,0.055,0.054,0.041,0.031,0.031,0.422,0.108,0.06,0.788,0.177,0.135,0.071,0.054,0.044,0.041,0.039,0.035,0.033,0.033,0.03,0.029,0.028,0.027,0.027,0.026,0.494,0.245,0.147,0.053,0.039,0.835,0.158,0.106,0.096,0.091,0.072,0.071,0.05,0.048,0.048,0.037,0.034,0.028,0.028,0.027,0.026,1.369,0.146,0.132,0.121,0.119,0.098,0.086,0.068,0.068,0.066,0.065,0.059,0.054,0.053,0.052,0.052,0.045,0.044,0.042,0.042,0.041,0.035,0.034,0.034,0.034,0.03,0.03,0.655,0.205,0.084,0.047,0.046,0.045,0.037,0.037,0.036,0.033,0.026,0.316,0.106,0.072,0.055,0.05,0.045,0.043,0.042,0.042,0.039,0.038,0.037,0.037,0.032,0.029,2.015,0.369,0.238,0.227,0.186,0.136,0.107,0.076,0.07,0.032,0.032,0.432,0.135,0.093,0.09,0.076,0.071,0.053,0.052,0.047,0.045,0.044,0.041,0.04,0.037,0.035,0.033,0.029,0.028,0.026,1.111,0.374,0.349,0.274,0.247,0.232,0.141,0.126,0.099,0.094,0.093,0.078,0.067,0.054,0.05,0.048,0.043,0.042,0.038,0.037,0.035,0.032,0.028,0.027,0.027,0.026,0.026,0.386,0.105,0.071,0.068,0.066,0.066,0.062,0.061,0.047,0.039,0.039,0.937,0.151,0.128,0.091,0.079,0.06,0.044,0.043,0.042,0.031,0.028,0.028,0.027,0.189,0.167,0.13,0.054,0.053,0.044,0.042,0.041,0.037,0.032,0.027,0.027,0.378,0.2,0.125,0.093,0.078,0.062,0.059,0.057,0.051,0.041,0.038,0.037,0.036,0.036,0.035,0.035,0.032,0.03,0.028,0.027,0.152,0.027,0.026,0.639,0.143,0.135,0.092,0.075,0.074,0.059,0.056,0.054,0.048,0.041,0.04,0.035,0.034,0.034,0.029,0.139,0.122,0.116,0.1,0.052,0.051,0.045,0.043,0.035,0.03,0.03,0.027,0.027,0.026,0.714,0.106,0.075,0.052,0.044,0.04,0.037,0.034,0.026,0.957,0.166,0.133,0.124,0.101,0.085,0.064,0.053,0.044,0.043,0.027,0.741,0.081,0.072,0.054,0.048,0.04,0.034,0.031,0.03,0.029,0.88,0.289,0.204,0.197,0.178,0.157,0.122,0.101,0.095,0.087,0.074,0.071,0.065,0.051,0.05,0.048,0.04,0.038,0.038,0.035,0.03,0.03,0.027,1.013,0.204,0.174,0.094,0.073,0.051,0.051,0.048,0.047,0.042,0.038,0.032,0.032,0.026,0.959,0.362,0.241,0.109,0.106,0.104,0.071,0.06,0.06,0.058,0.056,0.052,0.051,0.05,0.048,0.048,0.043,0.042,0.037,0.034,0.027,0.481,0.203,0.183,0.174,0.118,0.099,0.096,0.069,0.066,0.057,0.052,0.048,0.041,0.035,0.033,0.032,0.031,0.03,0.028,0.43,0.219,0.192,0.136,0.129,0.118,0.091,0.072,0.07,0.07,0.062,0.055,0.048,0.046,0.036,0.035,0.035,0.033,0.032,0.032,0.032,0.031,0.031,0.028,0.027,0.027,0.027,0.323,0.278,0.138,0.131,0.12,0.09,0.085,0.084,0.074,0.069,0.06,0.051,0.048,0.044,0.042,0.042,0.034,0.032,0.029,0.028,0.673,0.102,0.094,0.088,0.071,0.065,0.058,0.052,0.05,0.05,0.047,0.042,0.042,0.04,0.039,0.037,0.037,0.035,0.034,0.034,0.032,0.031,0.031,0.031,0.029,0.029,0.028,0.028,0.027,0.027,0.027,0.026,0.026,0.249,0.086,0.06,0.06,0.059,0.058,0.05,0.046,0.045,0.041,0.036,0.034,0.034,0.032,0.028,0.028,0.027,0.872,0.512,0.285,0.076,0.074,0.071,0.061,0.055,0.049,0.046,0.041,0.038,0.037,0.037,0.036,0.035,0.033,0.031,0.028,0.027,0.026,0.292,0.099,0.08,0.044,0.04,0.039,0.03,0.028,0.027,0.201,0.121,0.105,0.066,0.05,0.046,0.034,0.034,0.03,0.029,0.028,0.027,0.253,0.055,0.054,0.054,0.042,0.041,0.041,0.038,0.038,0.036,0.028,0.028,0.028,0.765,0.079,0.041,0.033,0.032,0.03,0.03,0.027,0.026,0.271,0.111,0.074,0.065,0.048,0.043,0.041,0.04,0.037,0.035,0.03,0.03,0.028,0.143,0.076,0.033,0.03,0.76,0.569,0.2,0.179,0.138,0.119,0.08,0.078,0.061,0.052,0.046,0.043,0.042,0.038,0.037,0.036,0.035,0.034,0.031,0.031,0.029,0.026,0.244,0.086,0.073,0.049,0.036,0.031,0.031,0.026,0.351,0.153,0.14,0.087,0.083,0.083,0.072,0.07,0.067,0.06,0.059,0.053,0.049,0.043,0.043,0.039,0.028,0.027,0.749,0.132,0.127,0.126,0.116,0.086,0.077,0.076,0.075,0.052,0.046,0.044,0.038,0.033,0.031,0.028,0.026,0.026,0.026,0.197,0.172,0.11,0.101,0.096,0.073,0.052,0.049,0.037,0.032,0.029,0.029,0.026,0.8,0.184,0.115,0.114,0.088,0.075,0.073,0.063,0.061,0.054,0.054,0.052,0.052,0.051,0.051,0.049,0.047,0.046,0.045,0.037,0.037,0.035,0.031,0.03,0.03,0.029,0.028,0.028,0.028,0.026,0.026,0.026,0.475,0.145,0.143,0.097,0.093,0.086,0.071,0.063,0.054,0.043,0.042,0.042,0.033,0.033,0.032,0.031,0.029,0.028,0.028,0.713,0.198,0.129,0.127,0.12,0.08,0.074,0.074,0.072,0.056,0.054,0.053,0.047,0.047,0.045,0.044,0.037,0.037,0.029,0.026,0.719,0.136,0.106,0.104,0.1,0.068,0.061,0.058,0.053,0.04,0.039,0.036,0.034,0.028,0.733,0.697,0.247,0.091,0.08,0.077,0.075,0.069,0.065,0.054,0.051,0.036,0.036,0.03,0.027,0.026,0.497,0.1,0.056,0.055,0.055,0.054,0.049,0.049,0.047,0.043,0.042,0.041,0.032,0.03,0.03,0.03,0.029,0.026,0.413,0.274,0.127,0.091,0.075,0.06,0.052,0.048,0.048,0.041,0.04,0.033,0.742,0.174,0.085,0.07,0.068,0.067,0.061,0.061,0.058,0.057,0.052,0.05,0.045,0.042,0.04,0.039,0.038,0.026,0.481,0.11,0.093,0.064,0.056,0.053,0.053,0.05,0.048,0.046,0.046,0.045,0.039,0.038,0.037,0.036,0.034,0.033,0.03,0.028,1.126,0.268,0.253,0.126,0.097,0.084,0.049,0.043,0.041,0.039,0.037,0.033,0.032,0.029,0.783,0.443,0.157,0.113,0.071,0.069,0.067,0.06,0.059,0.055,0.049,0.047,0.045,0.044,0.04,0.036,0.028,0.319,0.115,0.072,0.068,0.03,0.608,0.106,0.07,0.043,0.042,0.041,0.035,0.034,0.032,0.027,0.026,0.026,0.026,0.675,0.243,0.211,0.136,0.101,0.084,0.068,0.062,0.052,0.046,0.043,0.041,0.031,0.028,0.028,0.028,0.028,0.61,0.185,0.13,0.078,0.051,0.051,0.048,0.043,0.043,0.041,0.04,0.035,0.033,0.031,0.03,1.066,0.126,0.061,0.048,0.044,0.044,0.04,0.039,0.036,0.034,0.032,0.027,0.027,0.027,0.847,0.294,0.138,0.117,0.111,0.098,0.075,0.067,0.066,0.059,0.053,0.051,0.044,0.043,0.035,0.034,0.029,0.026,0.026,0.026,0.514,0.199,0.162,0.139,0.102,0.086,0.084,0.083,0.08,0.074,0.071,0.069,0.062,0.061,0.049,0.047,0.046,0.036,0.034,0.03,1.115,0.123,0.12,0.112,0.109,0.108,0.095,0.093,0.091,0.088,0.076,0.066,0.064,0.06,0.058,0.047,0.039,0.038,0.036,0.035,0.032,0.03,0.027,0.026,0.354,0.098,0.066,0.042,0.033,0.027,0.356,0.223,0.128,0.065,0.059,0.051,0.05,0.041,0.036,0.033,0.029,0.029,0.775,0.264,0.109,0.105,0.093,0.083,0.056,0.037,0.03,0.027,0.203,0.131,0.123,0.112,0.079,0.062,0.056,0.031,0.026,0.426,0.21,0.135,0.104,0.072,0.059,0.059,0.05,0.047,0.044,0.041,0.037,0.029,0.029,0.027,0.026,0.322,0.218,0.161,0.077,0.059,0.058,0.048,0.033,0.03,0.027,0.027,0.173,0.109,0.094,0.079,0.07,0.066,0.058,0.058,0.054,0.047,0.244,0.044,0.033,0.033,0.338,0.203,0.197,0.147,0.127,0.11,0.082,0.08,0.07,0.061,0.048,0.046,0.046,0.042,0.041,0.031,0.031,0.029,0.028,0.028,0.027,0.027,0.026,0.481,0.073,0.07,0.064,0.053,0.041,0.041,0.036,0.032,0.265,0.255,0.169,0.117,0.082,0.078,0.042,0.034,0.637,0.18,0.125,0.108,0.059,0.041,0.038,0.036,0.033,0.029,0.028,0.483,0.478,0.097,0.097,0.088,0.068,0.059,0.054,0.054,0.045,0.041,0.041,0.034,0.031,0.029,0.027,0.501,0.253,0.234,0.146,0.106,0.063,0.063,0.061,0.052,0.05,0.049,0.045,0.035,0.029,0.027,0.027,0.421,0.095,0.089,0.077,0.064,0.062,0.047,0.042,0.039,0.038,0.03,0.027,0.271,0.201,0.141,0.079,0.058,0.052,0.045,0.044,0.043,0.037,0.036,0.035,0.034,0.033,0.031,0.512,0.124,0.049,0.037,0.037,0.028,0.027,0.026,0.538,0.231,0.091,0.069,0.032,0.031,0.03,0.028,0.027,0.076,0.062,0.06,0.047,0.042,0.041,0.04,0.035,0.031,0.028,0.142,0.066,0.038,0.03,0.03,0.68,0.263,0.192,0.097,0.087,0.053,0.051,0.049,0.047,0.033,0.028,0.027,0.027,0.026,0.24,0.234,0.184,0.144,0.138,0.1,0.077,0.075,0.074,0.073,0.072,0.053,0.039,0.033,0.054,0.033,0.567,0.069,0.052,0.05,0.046,0.042,0.038,0.033,0.032,0.03,0.026,0.349,0.113,0.077,0.046,0.042,0.039,0.039,0.263,0.096,0.086,0.067,0.049,0.047,0.047,0.045,0.036,0.032,0.032,0.03,0.03,0.449,0.261,0.23,0.172,0.099,0.096,0.082,0.08,0.048,0.043,0.042,0.04,0.035,0.033,0.03,0.03,0.027,0.026,0.406,0.254,0.162,0.154,0.113,0.079,0.047,0.04,0.035,0.032,0.03,0.027,0.026,0.272,0.154,0.086,0.049,0.04,0.039,0.029,0.028,0.349,0.108,0.056,0.054,0.048,0.042,0.03,0.029,0.029,0.028,0.336,0.063,0.041,0.16,0.135,0.1,0.066,0.064,0.05,0.037,0.037,0.034,0.034,0.031,0.029,0.026,0.299,0.071,0.065,0.051,0.047,0.043,0.366,0.134,0.107,0.104,0.078,0.068,0.06,0.055,0.05,0.042,0.042,0.041,0.032,0.717,0.155,0.148,0.106,0.084,0.078,0.067,0.064,0.064,0.058,0.047,0.043,0.037,0.034,0.034,0.027,0.427,0.12,0.096,0.079,0.074,0.06,0.06,0.051,0.05,0.04,0.037,0.032,0.031,0.031,0.213,0.194,0.136,0.077,0.045,0.041,0.04,0.038,0.032,0.029,0.027,0.026,0.272,0.071,0.054,0.215,0.116,0.088,0.08,0.052,0.028,0.028,0.394,0.134,0.108,0.073,0.053,0.05,0.044,0.028,0.086,0.296,0.058,0.052,0.035,0.034,0.029,0.027,0.24,0.103,0.06,0.05,0.048,0.028,0.028,0.09,0.07,0.039,0.161,0.027,0.316,0.338,0.064,0.034,0.033,0.029,0.026],"colour":["#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666","#666"]},"nodes":{"name":["Deepak Anand","Ted Arnott","Roman Baber","Aris Babikian","Toby Barrett","Peter Bethlenfalvy","Will Bouma","Paul Calandra","Raymond Sung Joon Cho","Stan Cho","Steve Clark","Lorne Coe","Stephen Crawford","Rudy Cuzzetto","Doug Downey","Jill Dunlop","Christine Elliott","Victor Fedeli","Doug Ford","Goldie Ghamari","Parm Gill","Ernie Hardeman","Mike Harris","Christine Hogarth","Logan Kanapathi","Andrea Khanjin","Daryl Kramp","Natalia Kusendova","Stephen Lecce","Lisa MacLeod","Robin Martin","Gila Martow","Jim McDonell","Monte McNaughton","Christina Maria Mitas","Caroline Mulroney","Rick Nicholls","Sam Oosterhoff","Billy Pang","Lindsey Park","Michael Parsa","Randy Pettapiece","Rod Phillips","David Piccini","Kaleed Rasheed","Greg Rickford","Jeremy Roberts","Ross Romano","Sheref Sabawy","Prabmeet Singh Sarkaria","Laurie Scott","Donna Skelly","Todd Smith","Kinga Surma","Nina Tangri","Vijay Thanigaslam","Lisa Thompson","Michael Tibollo","Effie Triantafilopoulos","Bill Walker","John Yakabuski","Jeff Yurek","Jill Andrew","Teresa J. Armstrong","Ian Arthur","Doly Begum","Jessica Bell","Rima Berns-McGown","Gilles Bisson","Guy Bourgouin","Jeff Burch","Catherine Fife","Wayne Gates","France Gélinas","Chris Glover","Lisa Gretzky","Joel Harden","Faisal Hassan","Percy Hatfield","Andrea Horwath","Bhutila Karpoche","Terence Kernaghan","Laura Mae Lindo","Sol Mamakwa","Michael Mantha","Suze Morrison","Judith Monteith-Farrell","Taras Natyshak","Peggy Sattler","Sandy Shaw","Sara Singh","Gurratan Singh","Marit Stiles","Jennifer Stevens","Peter Tabuns","Monique Taylor","John Vanthof","Jamie West","Stephen Blais","Lucille Collard","Michael Coteau","Michael Gravelle","Mitzie Hunter","Amanda Simard","Kathleen Wynne","Mike Schreiner","Randy Hillier","Jim Wilson"],"group":["PCP","PCP","IND","PCP","PCP","PCP","PCP","PCP","PCP","PCP","PCP","PCP","PCP","PCP","PCP","PCP","PCP","PCP","PCP","PCP","PCP","PCP","PCP","PCP","PCP","PCP","PCP","PCP","PCP","PCP","PCP","PCP","PCP","PCP","PCP","PCP","PCP","PCP","PCP","PCP","PCP","PCP","PCP","PCP","PCP","PCP","PCP","PCP","PCP","PCP","PCP","PCP","PCP","PCP","PCP","PCP","PCP","PCP","PCP","PCP","PCP","PCP","NDP","NDP","NDP","NDP","NDP","NDP","NDP","NDP","NDP","NDP","NDP","NDP","NDP","NDP","NDP","NDP","NDP","NDP","NDP","NDP","NDP","NDP","NDP","NDP","NDP","NDP","NDP","NDP","NDP","NDP","NDP","NDP","NDP","NDP","NDP","NDP","LIB","LIB","LIB","LIB","LIB","LIB","LIB","GRN","IND","IND"]},"options":{"NodeID":"name","Group":"party","colourScale":"d3.scaleOrdinal()\n                              .domain([\"PCP\", \"NDP\", \"LIB\", \"GRN\" ,\"IND\"])\n                              .range([\"blue\",\"orange\",\"red\",\"green\", \"gray\"]);","fontSize":7,"fontFamily":"serif","clickTextSize":17.5,"linkDistance":50,"linkWidth":"function(d) { return Math.sqrt(d.value); }","charge":-30,"opacity":1,"zoom":true,"legend":false,"arrows":true,"nodesize":false,"radiusCalculation":" Math.sqrt(d.nodesize)+6","bounded":false,"opacityNoHover":0.5,"clickAction":null}},"evals":[],"jsHooks":[]}</script>
+<p>Now we’re getting somewhere! There are three clusters for the main parties, showing that MPPs interact most with other party members. The Premier, Doug Ford, is now dragged out into centre stage: almost everyone is talking to or about him. PC Cabinet members aren’t nearly so exposed in this graph, meaning a opposition MPPs interact with them only infrequently. And Randy’s off on his own, yelling at Doug.</p>
+<p>Focusing on the leaders, Mike Schreiner interacts only with Premier Doug Ford and the NDP leader, Andrea Horwath. I suppose that befits a party leader. Surprisingly, apart from Schreiner, only NDP MPPs interact strongly with Horwath. I’m not sure if the PCs are hands-off as a matter of party discipline or simply through lack of interest.</p>
+</div>
+</div>
+<div id="summing-up" class="section level2">
+<h2>Summing Up</h2>
+<p>We’ve learned quite a bit about how Ontario’s MPPs and political parties use Twitter.</p>
+<ul>
+<li><strong>Most parties are quite online.</strong> More than 80% of each party’s members are active on Twitter, with at least one public post.</li>
+<li><strong>Most MPPs post a lot of original content.</strong> Most MPPs post slightly more than one original tweet for each retweet. There’s wide variation though, and some post almost no retweets while others post nearly nothing but.</li>
+<li><strong>There’s a lot of variation in MPPs’ volume, velocity, and quality.</strong> We looked at the distribution and divided them into four categories–Beginners, Influencers, Extremely Online, and Tryhards.</li>
+<li><strong>Parties tweet about different things.</strong> We found substantial differences in word frequencies between parties, and some of those differences matched their political positions.</li>
+<li><strong>Nearly everyone talks to everyone sometimes.</strong> The full network graph of all interactions was extremely interconnected, although as we saw there was some structure along party lines.</li>
+<li><strong>Connections are generally strongest between parties, but everyone talks about Doug Ford.</strong> We found clear party clusters when we looked only at strong network connections, but the Premier was the clear and singular focus of everyone’s online conversations.</li>
+</ul>
+<p>We could go into more detail about any of these (or much more besides!) but this feels like a good place to stop. If you have thoughts, feel free to leave a comment or send me an email.</p>
+</div>
