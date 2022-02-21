@@ -1,0 +1,162 @@
+---
+title: Teaching a Computer to Talk*  *(Sort of)
+author: Christopher Belanger
+date: '2022-02-20'
+slug: generating-random-text-with-markov-chains
+categories: []
+tags:
+  - shiny
+  - rstats
+  - machine learning
+subtitle: 'Generating Random Text with Markov Chains'
+summary: 'Using math to provide future generations with an infinitely renewable source of Dr. Seuss stories and Doug Ford campaign speeches. Includes an interactive web app and an R package.'
+authors: []
+lastmod: '2022-02-20T14:32:14-05:00'
+featured: no
+header:
+  image: '/headers/2022-02-21-markov-mountains-adirondacks.jpg'
+  caption: 'Sunset in the Adirondack mountains.'
+projects: []
+---
+
+<script src="/rmarkdown-libs/header-attrs/header-attrs.js"></script>
+
+
+<blockquote>
+<p>“My friends, when we began this journey, I am so proud. So proud. So proud. So proud. So proud. So proud. So proud. So proud. So proud of” – Doug Schmord</p>
+</blockquote>
+<blockquote>
+<p>Then we saw all the things in the hat. Then we saw mother’s new gown! Her gown with the fan, and the cake! - Dr. Schmeuss</p>
+</blockquote>
+<div id="introduction" class="section level2">
+<h2>Introduction</h2>
+<p>What’s the easiest way to teach a computer to talk?</p>
+<p>This post shows a simple (interactive!) way to generate English text, providing an infinitely renewable source of Dr. Seuss stories and Doug Ford campaign speeches. The algorithm is available as an <a href="https://github.com/chris31415926535/markovtext">R package on GitHub</a>, and there’s <a href="http://dashboards.belangeranalytics.com/shiny_markov_text/">an interactive Shiny web app so you can try it yourself.</a></p>
+</div>
+<div id="motivation-and-research-question" class="section level2">
+<h2>Motivation and research question</h2>
+<p>When it comes to computer-generated text, massive deep-learning systems like <a href="https://openai.com/blog/gpt-3-apps/">GPT-3</a> generate a <a href="https://www.nytimes.com/2020/11/24/science/artificial-intelligence-ai-gpt3.html">lot</a> <a href="https://www.washingtonpost.com/technology/2021/11/26/sudowrite-gpt3-talese-imitate/">of</a> <a href="https://www.nytimes.com/2021/09/09/technology/codex-artificial-intelligence-coding.html">splashy</a> <a href="https://www.theguardian.com/commentisfree/2020/sep/08/robot-wrote-this-article-gpt-3">headlines</a>. But these systems are also opaque and have <a href="https://www.theregister.com/2020/11/04/gpt3_carbon_footprint_estimate/">ridiculous environmental impacts</a>–although <a href="https://arxiv.org/abs/2104.10350">it can be hard to measure them precisely</a>. More to the point, <a href="https://www.technologyreview.com/2020/08/22/1007539/gpt3-openai-language-generator-artificial-intelligence-ai-opinion/">they often don’t work in ways that can be hilarious</a>, <a href="https://www.theregister.com/2020/10/28/gpt3_medical_chatbot_experiment/">or, uh, not hilarious</a>.</p>
+<p>Reflecting on how poorly these large expensive models often work, I wondered how hard it would be to rig up a low-fi text generator using basic math. Or specifically:</p>
+<ul>
+<li>Can we generate semi-plausible English text modeled after an input text using simple and transparent methods?</li>
+</ul>
+<p>The rest of this post will try to convince you that the answer is “yes, sort of,” by walking through the R package <strong>markovtext</strong>: A deeply unserious package for generating random text that mimics a given input text using <a href="https://en.wikipedia.org/wiki/Markov_chain">Markov chains</a>. Obviously this won’t have the generality or flexibility of GPT-3 and its friends, but I believe there’s value in seeing how far you can get with simple surveyable methods.</p>
+</div>
+<div id="skip-the-math-show-me-the-interactive-stuff" class="section level2">
+<h2>Skip the math, show me the interactive stuff!</h2>
+<p><a href="http://dashboards.belangeranalytics.com/shiny_markov_text/">Click here to play with the algorithm using an interactive Shiny web app.</a></p>
+<p>It has a few default settings (Dr. Seuss, Doug Ford, Nietzsche, etc.) and you can also provide your own input text and adjust some of the parameters. You might try feeding it some <a href="https://www.gutenberg.org/">classic literature</a>, or perhaps <a href="https://genius.com/">something more contemporary</a>.</p>
+</div>
+<div id="okay-now-lets-talk-math" class="section level2">
+<h2>Okay, now let’s talk math</h2>
+<p>What if we wanted to write English text probabilistically? We could start by choosing some
+words–say, 1000 of them–assigning each one a number, and then rolling a 1000-sided die
+and writing down the corresponding numbers. This would generate strings of English
+words, but you’re probably already thinking that it wouldn’t really be English <em>text</em>.
+We’d get all kinds of nonsense.</p>
+<p>In coherent English <em>words tend to follow specific other words</em>. So we can’t just look at how often each specific word is used; we need to consider how often each specific word is used <em>after one or more other words are used</em>. We need a random system with some kind of a “memory.”</p>
+<p>This is where we use <a href="https://en.wikipedia.org/wiki/Markov_chain">Markov chains</a>: very roughly, a Markov chain is a discrete stochastic process where the probability of future outcomes depends on the system’s present state.<a href="#fn1" class="footnote-ref" id="fnref1"><sup>1</sup></a> <a href="https://en.wikipedia.org/wiki/Gambler%27s_fallacy">While a coin flip famously “has no memory,”</a>, a Markov chain does–just a little bit, at least.</p>
+<p>This would let us ask the following question: given the word(s) we’ve just seen, which words are likely to come next? Both the words themselves and their likelihoods will depend on the input text we feed our algorithm.</p>
+<p>So we put this all together into a simple model: We’ll generate text one word at a time using simple probabilities based on observed frequencies in an input text. We’ll break an input text down into a string of words (treating some punctuation marks as special words), count how often each word comes after each other word (or two words), and then use those counts to generate new text based on the words we’ve generated so far.</p>
+</div>
+<div id="generating-some-random-text-with-r" class="section level2">
+<h2>Generating some random text with R</h2>
+<p>You can install the development version of the R package <strong>markovtext</strong> from <a href="https://github.com/">GitHub</a> with:</p>
+<pre class="r"><code># install.packages(&quot;devtools&quot;)
+devtools::install_github(&quot;chris31415926535/markovtext&quot;)</code></pre>
+<p>The package has only two functions:</p>
+<ul>
+<li><code>markovtext::get_word_freqs()</code> takes an input text and generates a word-frequency table.</li>
+<li><code>markovtext::generate_text()</code> uses a word-frequency table to generate random text.</li>
+</ul>
+<p>It also includes a few sample word-frequency tables to get you started. I’ll walk through some extremely legitimate use-cases here.</p>
+<div id="for-the-doug-ford-superfans" class="section level3">
+<h3>For the Doug Ford superfans</h3>
+<p>Perhaps you are a <a href="https://en.wikipedia.org/wiki/Doug_Ford">Doug Ford</a> superfan, and your only wish in life is for a never-ending source of wisdom from Ontario’s 26th Premier. Today is your lucky day, for nirvana is only one function call away:</p>
+<pre class="r"><code>dougford_text &lt;- markovtext::generate_text(markovtext::wordfreqs_dougford_3grams, word_length = 100)
+
+knitr::kable(dougford_text, col.names = &quot;&quot;)</code></pre>
+<table>
+<colgroup>
+<col width="100%" />
+</colgroup>
+<tbody>
+<tr class="odd">
+<td align="left">I want to thank each of you. Hazel mccallion, I thank you. And we will reduce your gas prices and keep more money in your pocket. A plan to fix our economy and create more good, paying jobs. A legacy of service to the people. We will deliver on our plan for the people of this province around, so our children and their children will always put you first and we will make ontario once again the engine of canada. My friends what a response. This victory belongs to you.</td>
+</tr>
+</tbody>
+</table>
+<p>I fed the algorithm Doug Ford’s victory speech, and asked it to calculate probabilities based on the past two words. So for example, “open for” will always be followed by “business,” but “thank you” could be followed by “for” (12.5% chance), “from” (12.5%), “so” (12.5%), a comma (12.5%), or a period (50%).</p>
+<p>The results are–to me, at least, and by the standards of Doug Ford speeches–surprisingly coherent.</p>
+</div>
+<div id="for-three-year-olds-who-just-wont-go-to-sleep" class="section level3">
+<h3>For three-year-olds who just won’t go to sleep</h3>
+<p>Or perhaps you’re a beleaguered parent facing a three-year-old with an insatiable demand for Dr. Seuss bedtime stories. Again, I’ve got you covered:</p>
+<pre class="r"><code>seuss_text &lt;- markovtext::generate_text(markovtext::wordfreqs_catinthehat_3grams, word_length = 100)
+
+knitr::kable(seuss_text, col.names = &quot;&quot;)</code></pre>
+<table>
+<colgroup>
+<col width="100%" />
+</colgroup>
+<tbody>
+<tr class="odd">
+<td align="left">I do not wish to go! They should not fly kites, said the cat. In this box are two things, said the fish in the pot. But I like this? Oh, what would she say? Oh, so tame! They should not be about. He picked up the hook. Now look at me! Look at this! Look at this! Look at me now! It is wet and the dish, and the dish, and the sun did not know what to say. You did</td>
+</tr>
+</tbody>
+</table>
+<p>If you squint a bit, the output has the general form and sometimes even the cadence of a Dr. Seuss poem. Of course there’s no hope of a narrative, but that was never our intent.</p>
+</div>
+<div id="generating-text-based-on-your-own-inputs" class="section level3">
+<h3>Generating text based on your own inputs</h3>
+<p>You can also supply an input text for the package to mimic.</p>
+<p>Here we’ll generate text based on this famous aphorism from the philosopher <a href="https://en.wikipedia.org/wiki/James_Robert_Brown">James Robert Brown</a>’s <a href="https://www.youtube.com/watch?v=IST6qRfVqwY">1973 studio album</a>:</p>
+<blockquote>
+<p>I can do wheelin’, I can do dealin’,
+But I don’t do no damn squealin’.
+I can dig rappin’, I’m ready! I can dig scrappin’.
+But I can’t dig that backstabbin’.</p>
+</blockquote>
+<p>Create a word-frequency table by feeding that text to <code>get_word_freqs()</code>, and generate text with a simple call to <code>generate_text()</code>.</p>
+<p>Here’s a sample:</p>
+<pre class="r"><code>library(markovtext)
+
+text &lt;- &quot;I can do wheelin&#39;, I can do dealin&#39;,
+         But I don&#39;t do no damn squealin&#39;.
+         I can dig rappin&#39;, I&#39;m ready! I can dig scrappin&#39;.
+         But I can&#39;t dig that backstabbin&#39;.&quot;
+
+wordfreqs &lt;- markovtext::get_word_freqs(text, n_grams = 3)
+
+new_text &lt;- markovtext::generate_text(wordfreqs, word_length = 50)
+
+knitr::kable(new_text, col.names = &quot;&quot;)</code></pre>
+<table>
+<colgroup>
+<col width="100%" />
+</colgroup>
+<tbody>
+<tr class="odd">
+<td align="left">I can do dealin, but I don’t do no damn squealin. I can dig scrappin. But I don’t do no damn squealin. I can do dealin, but I can’t dig that backstabbin. But I can’t dig that backstabbin. But I don’t do no damn</td>
+</tr>
+</tbody>
+</table>
+<p>The output is, again, a (mostly) grammatically correct string of text that replicates the structures found in the input text. Leading and trailing punctuation is trimmed from the input words, so we lose the contractions in the output.</p>
+</div>
+</div>
+<div id="next-steps" class="section level2">
+<h2>Next steps?</h2>
+<p>I’m morbidly curious to see what would happen if you extend the “memory” back an arbitrary number of steps. My guess is that the output would become more grammatically correct, but that you’d also need to feed it much more data. In a short text, for example, any arbitrary string of 3 or 4 words is only likely to happen once, so your “random output” would just reproduce the input perfectly.</p>
+<p>But now we’re getting beyond entertainment into more serious research, which is definitely outside the scope of this extremely unserious blog post.</p>
+</div>
+<div id="conclusion" class="section level2">
+<h2>Conclusion</h2>
+<p>You can generate semi-plausible English text using a surprisingly simple probabilistic model. The code to do so is available in a custom R package available on GitHub, and I’ve wrapped it into a nice interactive web app for users to explore themselves.</p>
+<p>Did you try it out? Did it generate anything good?</p>
+</div>
+<div class="footnotes">
+<hr />
+<ol>
+<li id="fn1"><p>This description is highly oversimplified!<a href="#fnref1" class="footnote-back">↩︎</a></p></li>
+</ol>
+</div>

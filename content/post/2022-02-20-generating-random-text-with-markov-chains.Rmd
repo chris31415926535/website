@@ -1,0 +1,170 @@
+---
+title: Teaching a Computer to Talk*  *(Sort of)
+author: Christopher Belanger
+date: '2022-02-20'
+slug: generating-random-text-with-markov-chains
+categories: []
+tags:
+  - shiny
+  - rstats
+  - machine learning
+subtitle: 'Generating Random Text with Markov Chains'
+summary: 'Using math to provide future generations with an infinitely renewable source of Dr. Seuss stories and Doug Ford campaign speeches. Includes an interactive web app and an R package.'
+authors: []
+lastmod: '2022-02-20T14:32:14-05:00'
+featured: no
+header:
+  image: '/headers/2022-02-21-markov-mountains-adirondacks.jpg'
+  caption: 'Sunset in the Adirondack mountains.'
+projects: []
+---
+
+```{r include=FALSE}
+set.seed(6)
+```
+
+
+> "My friends, when we began this journey, I am so proud. So proud. So proud. So proud. So proud. So proud. So proud. So proud. So proud of" -- Doug Schmord
+
+> Then we saw all the things in the hat. Then we saw mother's new gown! Her gown with the fan, and the cake! - Dr. Schmeuss
+
+## Introduction
+
+What's the easiest way to teach a computer to talk?
+
+This post shows a simple (interactive!) way to generate English text, providing an infinitely renewable source of Dr. Seuss stories and Doug Ford campaign speeches. The algorithm is available as an [R package on GitHub](https://github.com/chris31415926535/markovtext), and there's [an interactive Shiny web app so you can try it yourself.](http://dashboards.belangeranalytics.com/shiny_markov_text/)
+
+## Motivation and research question
+
+When it comes to computer-generated text, massive deep-learning systems like [GPT-3](https://openai.com/blog/gpt-3-apps/) generate a [lot](https://www.nytimes.com/2020/11/24/science/artificial-intelligence-ai-gpt3.html) [of](https://www.washingtonpost.com/technology/2021/11/26/sudowrite-gpt3-talese-imitate/) [splashy](https://www.nytimes.com/2021/09/09/technology/codex-artificial-intelligence-coding.html) [headlines](https://www.theguardian.com/commentisfree/2020/sep/08/robot-wrote-this-article-gpt-3). But these systems are also opaque and have [ridiculous environmental impacts](https://www.theregister.com/2020/11/04/gpt3_carbon_footprint_estimate/)--although [it can be hard to measure them precisely](https://arxiv.org/abs/2104.10350). More to the point, [they often don't work in ways that can be hilarious](https://www.technologyreview.com/2020/08/22/1007539/gpt3-openai-language-generator-artificial-intelligence-ai-opinion/), [or, uh, not hilarious](https://www.theregister.com/2020/10/28/gpt3_medical_chatbot_experiment/). 
+
+Reflecting on how poorly these large expensive models often work, I wondered how hard it would be to rig up a low-fi text generator using basic math. Or specifically:
+
+* Can we generate semi-plausible English text modeled after an input text using simple and transparent methods?
+
+The rest of this post will try to convince you that the answer is "yes, sort of," by walking through the R package **markovtext**: A deeply unserious package for generating random text that mimics a given input text using [Markov chains](https://en.wikipedia.org/wiki/Markov_chain). Obviously this won't have the generality or flexibility of GPT-3 and its friends, but I believe there's value in seeing how far you can get with simple surveyable methods.
+
+## Skip the math, show me the interactive stuff!
+
+[Click here to play with the algorithm using an interactive Shiny web app.](http://dashboards.belangeranalytics.com/shiny_markov_text/) 
+
+It has a few default settings (Dr. Seuss, Doug Ford, Nietzsche, etc.) and you can also provide your own input text and adjust some of the parameters. You might try feeding it some [classic literature](https://www.gutenberg.org/), or perhaps [something more contemporary](https://genius.com/).
+
+## Okay, now let's talk math
+
+What if we wanted to write English text probabilistically? We could start by choosing some 
+words--say, 1000 of them--assigning each one a number, and then rolling a 1000-sided die
+and writing down the corresponding numbers. This would generate strings of English
+words, but you're probably already thinking that it wouldn't really be English _text_.
+We'd get all kinds of nonsense.
+
+In coherent English *words tend to follow specific other words*. So we can't just look at how often each specific word is used; we need to consider how often each specific word is used *after one or more other words are used*. We need a random system with some kind of a "memory."
+
+This is where we use [Markov chains](https://en.wikipedia.org/wiki/Markov_chain): very roughly, a Markov chain is a discrete stochastic process where the probability of future outcomes depends on the system's present state.^[This description is highly oversimplified!] [While a coin flip famously "has no memory,"](https://en.wikipedia.org/wiki/Gambler%27s_fallacy), a Markov chain does--just a little bit, at least.
+
+This would let us ask the following question: given the word(s) we've just seen, which words are likely to come next? Both the words themselves and their likelihoods will depend on the input text we feed our algorithm. 
+
+So we put this all together into a simple model: We'll generate text one word at a time using simple probabilities based on observed frequencies in an input text. We'll break an input text down into a string of words (treating some punctuation marks as special words), count how often each word comes after each other word (or two words), and then use those counts to generate new text based on the words we've generated so far.
+
+## Generating some random text with R
+
+You can install the development version of the R package **markovtext** from [GitHub](https://github.com/) with:
+
+``` r
+# install.packages("devtools")
+devtools::install_github("chris31415926535/markovtext")
+```
+
+The package has only two functions: 
+
+* `markovtext::get_word_freqs()` takes an input text and generates a word-frequency table.
+* `markovtext::generate_text()` uses a word-frequency table to generate random text. 
+
+It also includes a few sample word-frequency tables to get you started. I'll walk through some extremely legitimate use-cases here.
+
+### For the Doug Ford superfans
+
+Perhaps you are a [Doug Ford](https://en.wikipedia.org/wiki/Doug_Ford) superfan, and your only wish in life is for a never-ending source of wisdom from Ontario's 26th Premier. Today is your lucky day, for nirvana is only one function call away:
+
+```{r}
+dougford_text <- markovtext::generate_text(markovtext::wordfreqs_dougford_3grams, word_length = 100)
+
+knitr::kable(dougford_text, col.names = "")
+```
+
+I fed the algorithm Doug Ford's victory speech, and asked it to calculate probabilities based on the past two words. So for example, "open for" will always be followed by "business," but "thank you" could be followed by "for" (12.5% chance), "from" (12.5%), "so" (12.5%), a comma (12.5%), or a period (50%).
+
+The results are--to me, at least, and by the standards of Doug Ford speeches--surprisingly coherent.
+
+### For three-year-olds who just won't go to sleep
+
+Or perhaps you're a beleaguered parent facing a three-year-old with an insatiable demand for Dr. Seuss bedtime stories. Again, I've got you covered:
+
+```{r}
+seuss_text <- markovtext::generate_text(markovtext::wordfreqs_catinthehat_3grams, word_length = 100)
+
+knitr::kable(seuss_text, col.names = "")
+```
+
+If you squint a bit, the output has the general form and sometimes even the cadence of a Dr. Seuss poem. Of course there's no hope of a narrative, but that was never our intent.
+
+### Generating text based on your own inputs
+
+You can also supply an input text for the package to mimic.
+
+Here we'll generate text based on this famous aphorism from the philosopher [James Robert Brown](https://en.wikipedia.org/wiki/James_Robert_Brown)'s [1973 studio album](https://www.youtube.com/watch?v=IST6qRfVqwY):
+
+> I can do wheelin', I can do dealin',
+> But I don't do no damn squealin'.
+> I can dig rappin', I'm ready! I can dig scrappin'.
+> But I can't dig that backstabbin'.
+
+Create a word-frequency table by feeding that text to `get_word_freqs()`, and generate text with a simple call to `generate_text()`.
+
+Here's a sample:
+
+```{r example}
+library(markovtext)
+
+text <- "I can do wheelin', I can do dealin',
+         But I don't do no damn squealin'.
+         I can dig rappin', I'm ready! I can dig scrappin'.
+         But I can't dig that backstabbin'."
+
+wordfreqs <- markovtext::get_word_freqs(text, n_grams = 3)
+
+new_text <- markovtext::generate_text(wordfreqs, word_length = 50)
+
+knitr::kable(new_text, col.names = "")
+```
+
+The output is, again, a (mostly) grammatically correct string of text that replicates the structures found in the input text. Leading and trailing punctuation is trimmed from the input words, so we lose the contractions in the output.
+
+## Next steps?
+
+I'm morbidly curious to see what would happen if you extend the "memory" back an arbitrary number of steps. My guess is that the output would become more grammatically correct, but that you'd also need to feed it much more data. In a short text, for example, any arbitrary string of 3 or 4 words is only likely to happen once, so your "random output" would just reproduce the input perfectly.
+
+But now we're getting beyond entertainment into more serious research, which is definitely outside the scope of this extremely unserious blog post.
+
+## Conclusion
+
+You can generate semi-plausible English text using a surprisingly simple probabilistic model. The code to do so is available in a custom R package available on GitHub, and I've wrapped it into a nice interactive web app for users to explore themselves.
+
+Did you try it out? Did it generate anything good?
+
+
+```{r eval=FALSE, include = FALSE}
+What's the easiest way to teach a computer to talk? This post (plus interactive web app!) shows one way to generate plausible English text using nothing but high-school math.
+
+There's an interactive Shiny web app that lets you try it out, and the algorithm is included as an R packag on GitHub.
+
+Will this model usurp GPT-3's throne as a cutting-edge AI/ML model? Definitely not! But will it make you laugh with one millionth of its carbon footprint? It just might.
+
+I think the algorithm really summed it up when, channeling Doug Ford, it said: "I want to fix our children and I thank you. We are the impossible."
+
+If you come up with any gems, please post them in the comments!
+
+
+
+```
+

@@ -6,7 +6,7 @@ education:
   courses:
   - course: Masters of Business Administration
     institution: University of Ottawa
-    year: 2021 (Expected)
+    year: 2021
   - course: PhD in Philosophy of Modern Physics
     institution: University of Toronto
     year: 2014
@@ -21,6 +21,8 @@ interests:
 organizations:
 - name: Ottawa Neighbourhood Study
   url: "https://www.neighbourhoodstudy.ca/"
+- name: Institut du Savoir Montfort
+  url: "https://savoirmontfort.ca/en/"
 - name: University of Ottawa
   url: ""
 role: Data Scientist<br>Researcher<br>Policy Expert
@@ -36,7 +38,7 @@ social:
   icon_pack: fab
   link: https://www.linkedin.com/in/christopherabelanger/
 superuser: true
-title: Christopher Belanger, PhD
+title: Christopher Belanger, PhD MBA
 user_groups:
 - Researchers
 - Visitors
@@ -44,4 +46,4 @@ user_groups:
 
 I'm a data scientist, researcher, and policy expert who combines data-driven rigour with qualitative insights. My work and research interests include data science in support of the public good, qualitative investigations into consumers' and workers' experiences, and health policy with a focus on digital health and health-system governance.
 
-I have five years' experience in policy and strategy advisory roles with the Province of Ontario and the Government of Canada, and I received my PhD from the University of Toronto in the Philosophy of Modern Physics. I'm currently completing MBA studies at the University of Ottawa, doing data science with the [Ottawa Neighbourhood Study](https://www.neighbourhoodstudy.ca), and am Principal Investigator on a uOttawa-based qualitative research study on public servants' experiences with meaninglessness at work.
+I have five years' experience in policy and strategy advisory roles with the Province of Ontario and the Government of Canada, and I received my PhD from the University of Toronto in the Philosophy of Modern Physics and an MBA studies from the University of Ottawa. I'm currently doing data science with the [Ottawa Neighbourhood Study](https://www.neighbourhoodstudy.ca), am an Affiliated Postdoctoral Fellow with the University of Ottawa and the Institut du Savour Montfort researching access to primary care and digital health, and am Principal Investigator on a uOttawa-based qualitative research study on public servants' experiences with meaninglessness at work.
