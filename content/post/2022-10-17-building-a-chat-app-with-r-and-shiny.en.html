@@ -1,0 +1,277 @@
+---
+title: Building a Chat App with R and Shiny
+author: 'Christopher Belanger'
+date: '2022-10-17'
+slug: building-a-chat-app-with-r-and-shiny
+categories: []
+tags:
+  - shiny
+  - Rstats
+  - databases
+subtitle: ''
+summary: 'How to build a basic chat application in R using Shiny, RSQlite databases, and CSS. The underlying logic can also be used for serious business applications.'
+authors: []
+lastmod: '2022-10-17T12:29:17-04:00'
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: no
+projects: []
+---
+
+<script src="/rmarkdown-libs/header-attrs/header-attrs.js"></script>
+
+
+<p>This demo shows how to build a basic chat application in R using Shiny and SQLite. It’s a bit of a silly project but the underlying logic can also be used for serious business applications, and we’ll use databases, html, CSS, a bit of Javascript, and a lot of R.</p>
+<p>You can try out <a href="https://chris31415926535.shinyapps.io/shiny-sql-chat/"><strong>a completely unmoderated (!! please be respectful !!) version here</strong></a>, which will remain up for an indeterminate amount of time.</p>
+<p>To try out the finished product yourself, <a href="https://github.com/chris31415926535/shiny.sql.chat">grab the code from GitHub</a>, load app.R in RStudio, and click “Run App.”</p>
+<p>The basic logic is:</p>
+<ul>
+<li>Messages are stored in a database. We’ll use SQLite, because it’s easy, local, and file-based, but in a real project you might use a cloud-based SQL (or noSQL) server.</li>
+<li>When a user sends a message, it’s added to the database as a new row.</li>
+<li>Once per second, the app checks the database to see if there are new messages, and if it finds any it downloads them.</li>
+<li>Messages are formatted using CSS based on whether the current username matches the message sender’s name.</li>
+<li>A bit of extra JavaScript adds polish by auto-scrolling down when a new message is received.</li>
+</ul>
+<p>This post was inspired by <a href="https://www.r-bloggers.com/2017/07/shiny-chat-in-few-lines-of-code-2/">this older post</a>, but extends it quite a bit and brings it up to date.</p>
+<div id="step-1-set-up-the-database" class="section level1">
+<h1>Step 1: Set up the database</h1>
+<p>First, we need to set up the database we’ll use to store our chat messages. We’ll use <a href="https://www.sqlite.org/">SQLite</a>, describe by its authors as “a small, fast, self-contained, high-reliability, full-featured, SQL database engine.” It also has <a href="https://solutions.rstudio.com/db/databases/sqlite/">first-class support from RStudio</a> through the <a href="https://github.com/r-dbi/RSQLite">RSQLite package</a>.</p>
+<p>SQLite databases exist as regular files, so we’ll name ours <code>messages.sqlite</code> and keep it in a folder called <code>data</code>. Databases can contain many tables, so we’ll store our messages in a table named <code>messages</code>.</p>
+<p>Then, to initialize our database, we’ll create a zero-row tibble to use as a template that we can add rows to later. To keep it simple, we’ll store each message’s username, date and time, and message, all as characters.</p>
+<pre class="r"><code>library(dplyr)
+library(DBI)
+library(RSQLite)
+
+# create a zero-row tibble with the correct column names and data types
+message_db_schema &lt;- dplyr::tibble(username = character(0),
+                                   datetime = character(0),
+                                   message = character(0))
+
+# make sure we have a data directory
+if (!dir.exists(&quot;data&quot;)) dir.create(&quot;data&quot;)
+
+# connect to SQLite database, or create one
+con &lt;- DBI::dbConnect(RSQLite::SQLite(), &quot;data/messages.sqlite&quot;)
+
+# if there is no message table, create one using our schema
+if (!&quot;messages&quot; %in% DBI::dbListTables(con)){
+  dplyr::copy_to(con, message_db_schema, name = &quot;messages&quot;, overwrite = TRUE,  temporary = FALSE )
+}</code></pre>
+<p>Now we have a connection object named <code>con</code> that points to our database.</p>
+<p>To add a new message, we put our data in a one-row tibble and use <code>DBI::dbAppendTable()</code> to add it:</p>
+<pre class="r"><code>new_message &lt;- dplyr::tibble(
+  username = &quot;Chris&quot;,
+  datetime = Sys.time(),
+  message = &quot;Hi everyone!&quot;
+)
+
+RSQLite::dbAppendTable(con, &quot;messages&quot;, new_message)</code></pre>
+<p>And to read our message, we use <code>dplyr::tbl()</code> to get a connection to the <code>messages</code> table, and then call <code>collect()</code> to download the results.</p>
+<pre class="r"><code>chat_messages &lt;- dplyr::tbl(con, &quot;messages&quot;) %&gt;%
+  collect()</code></pre>
+<p>Until we call <code>collect()</code>, we’re actually operating on data that’s <em>in the database</em>, not stored in memory. We’re not taking advantage of here, but databases give the ability to do a lot of <code>dplyr</code>-esque operations <em>remotely</em> and then to call <code>collect()</code> to download the results once they’re processed.</p>
+<p>This is really the entirety of the database stuff, and if you had a few friends running R on the same machine you could technically use this to chat with each other.</p>
+<p>But, as is so often the case, putting this simple logic into a Shiny app makes it much more impressive!</p>
+</div>
+<div id="step-2-make-it-shiny" class="section level1">
+<h1>Step 2: Make it Shiny</h1>
+<p>Let’s set up the UI for our basic Shiny app. We’ll use a <code>sidebarLayout()</code> structure with chat controls on the left, and chat messages on the right. We need two inputs: a text field for message text, and a button to send messages. For convenience we’ll also add a second button to clear the chat logs.</p>
+<p>I’ll present the highlights here, and <a href="https://github.com/chris31415926535/shiny.sql.chat">you can see the whole thing in the file app-basic.R on GitHub here</a>.</p>
+<p>Our entire UI code fits into just a few lines:</p>
+<pre class="r"><code># Define UI for basic chat application
+ui &lt;- fluidPage(
+  
+  # Application title
+  titlePanel(&quot;Simple SQL-Powered Chat in R Shiny!&quot;),
+  
+  # Sidebar with user input and chat controls
+  sidebarLayout(
+    sidebarPanel(width = 3,
+                 textInput(&quot;msg_text&quot;, &quot;Message Text:&quot;),
+                 actionButton(&quot;msg_button&quot;, &quot;Send Message&quot;),
+                 hr(),
+                 actionButton(&quot;msg_clearchat&quot;, &quot;Clear Chat Log&quot;)),
+    
+    # main chat panel
+    mainPanel(tableOutput(&quot;messages_basic&quot;)))
+)</code></pre>
+<p>Next, we define our server logic.
+To keep it simple we’ll assign users random names à la <a href="https://knowyourmeme.com/memes/firstname-bunchofnumbers">Firstname Bunchofnumbers</a><a href="#fn1" class="footnote-ref" id="fnref1"><sup>1</sup></a>, and assume we’ll set up a connection <code>con</code> to our database as described above.</p>
+<p>Then we need:</p>
+<ul>
+<li>A button handler for when people click “Send Message”;</li>
+<li>A button handler for when people click “Clear Chat Log”;</li>
+<li>A way to regularly check for new messages; and,</li>
+<li>An output that displays new messages as they’re received.</li>
+</ul>
+<p>To make this all work, we’re going to store the current set of messages locally in a <code>reactiveValues</code> object. This way our outputs will update automatically if we get new messages. We’ll also put the code to read messages into a function since we need to do it in a few different places:</p>
+<pre class="r"><code># A separate function in case you want to do any data preparation (e.g. time zone stuff)
+read_messages &lt;- function(con){
+  dplyr::tbl(con, &quot;messages&quot;) %&gt;%
+    collect()
+}
+
+# read initial set of messages
+messages_db &lt;- reactiveValues(messages = read_messages(con))</code></pre>
+<p>The button handler for sending a message is straightforward but long. <em>If</em> there is a valid message to send, then create a one-row tibble with the username/date-time/message, append it to the table <code>messages</code> in the database, read the new values from the database, and empty the message-text input area.</p>
+<pre class="r"><code># Button handler for sending a message
+observeEvent(input$msg_button, {
+  
+  # only do anything if there&#39;s a message
+  if (!(input$msg_text == &quot;&quot; | is.null(input$msg_text))) {
+    
+    msg_time &lt;- Sys.time() %&gt;%
+      as.character()
+    
+    new_message &lt;- dplyr::tibble(username = msg_username,
+                                 message = input$msg_text,
+                                 datetime = msg_time)
+    
+    RSQLite::dbAppendTable(con, &quot;messages&quot;, new_message)
+    
+    messages_db$messages &lt;- read_messages(con)
+    
+    # clear the message text
+    shiny::updateTextInput(inputId = &quot;msg_text&quot;,
+                           value = &quot;&quot;)
+  }
+})</code></pre>
+<p>The button handler for clearing the chat is even simpler: just overwrite the <code>messages</code> table in the database with our empty schema:</p>
+<pre class="r"><code># Button handler for clearing the chat
+observeEvent(input$msg_clearchat, {
+  dplyr::copy_to(con, message_db_schema, name = &quot;messages&quot;, overwrite = TRUE,  temporary = FALSE )
+  messages_db &lt;- reactiveValues(messages = read_messages(con))
+})</code></pre>
+<p>The last major piece is to regularly poll the database for new messages. Here we’ll use a <code>reactiveTimer()</code> that fires once ever 1000 milliseconds and checks the database.</p>
+<pre class="r"><code>  # create a reactive timer to check the database regularly
+  db_check_timer &lt;- shiny::reactiveTimer(intervalMs = 1000)
+
+  # check the table for updates each second
+  observe({
+    db_check_timer()
+    messages_db$messages &lt;- read_messages(con)
+  })</code></pre>
+<p>And, for completeness, we have a simple <code>renderTable()</code> to render our output.</p>
+<pre class="r"><code># Display our messages using a basic table output
+output$messages_basic &lt;- shiny::renderTable(messages_db$messages)</code></pre>
+<p>If we put this all together, we get a functional chat app!</p>
+<div class="figure">
+<img src="/img/2022-10-17/app-basic.png" alt="" />
+<p class="caption">A basic chat application.</p>
+</div>
+<p>It may not be pretty, but it <em>works!</em> If you run the app and load it in two different browser tabs, you’ll see messages from one appear in the other a second later.</p>
+<p><a href="https://github.com/chris31415926535/shiny.sql.chat/blob/main/app-basic.R">See the full code here!</a></p>
+</div>
+<div id="step-3-polish-it-with-css-and-javascript" class="section level1">
+<h1>Step 3: Polish it with CSS and Javascript</h1>
+<p>Now that we have our basic app, let’s make it fancy by reorganizing our UI, styling it with CSS, and adding some Javascript. I’m just going to hit the highlights here, but you can see the whole app <a href="https://github.com/chris31415926535/shiny.sql.chat/blob/main/app.R">here on GitHub</a>.</p>
+<div id="reorganizing-the-ui" class="section level2">
+<h2>Reorganizing the UI</h2>
+<p>Instead of using a <code>sidebarLayout()</code>, let’s put the chat messages in a window over the input controls like a normal chat app. Also, instead of printing our chat messages as a boring table, let’s output it as html that we can then style with CSS.</p>
+<p>The actual layout code for our UI looks very similar, except it now has no <code>sidebayLayout()</code> wrapper, a new line <code>id = "chatbox-container"</code>, and some stuff about <code>style="display:flex"</code>.</p>
+<pre class="r"><code>ui &lt;- fluidPage(
+  id = &quot;chatbox-container&quot;,
+
+  # Application title
+  titlePanel(&quot;Simple SQL-Powered Chat in R Shiny!&quot;),
+
+  uiOutput(&quot;messages_fancy&quot;),
+
+  tags$div(textInput(&quot;msg_text&quot;, label = NULL),
+           actionButton(&quot;msg_button&quot;, &quot;Send&quot;, height=&quot;30px&quot;),
+           style=&quot;display:flex&quot;),
+  hr(),
+  textInput(&quot;msg_username&quot;, &quot;User Name:&quot;, value = &quot;Chat Enthusiast&quot;),
+  actionButton(&quot;msg_clearchat&quot;, &quot;Clear Chat Log&quot;)
+)</code></pre>
+<p>But <em>also</em> notice that now we’re using <code>uiOutput()</code> instead of <code>tableOutput()</code>. <code>uiOutput()</code> lets us render HTML in our server and have it display and update dynamically.</p>
+<p>This dynamic rendering happens in the function <code>render_msg_fancy()</code>, inspired by <a href="https://www.r-bloggers.com/2017/07/shiny-chat-in-few-lines-of-code-2/">this blog post</a>:</p>
+<pre class="r"><code>render_msg_fancy &lt;- function(messages, self_username) {
+  div(id = &quot;chat-container&quot;,
+      class = &quot;chat-container&quot;,
+      messages %&gt;%
+        purrrlyr::by_row(~ div(class =  dplyr::if_else(
+          .$username == self_username,
+          &quot;chat-message-left&quot;, &quot;chat-message-right&quot;),
+          a(class = &quot;username&quot;, .$username),
+          div(class = &quot;message&quot;, .$message),
+          div(class = &quot;datetime&quot;, .$datetime)
+        ))
+      %&gt;% {.$.out}
+  )
+}</code></pre>
+<p><code>render_msg_fancy()</code> takes each row of our message table and transforms it into html divs with specific classes and ids that we can then style with css. Note there’s a <code>dplyr::if_else()</code> in there that checks to see if the current username is the same as the message sender’s username, and assigns the message a class <code>chat-message-left</code> or <code>chat-message-right</code> accordingly.</p>
+<p>To make it concrete, here’s what <code>render_msg_fancy()</code> outputs for a one-row chat log:</p>
+<pre class="hmtl"><code>&lt;div id=&quot;chat-container&quot; class=&quot;chat-container&quot;&gt;
+  &lt;div class=&quot;chat-message-right&quot;&gt;
+    &lt;a class=&quot;username&quot;&gt;Chat Enthusiast5917836&lt;/a&gt;
+    &lt;div class=&quot;message&quot;&gt;I sure do love to chat!&lt;/div&gt;
+    &lt;div class=&quot;datetime&quot;&gt;2022-10-17 10:19:24&lt;/div&gt;
+  &lt;/div&gt;
+&lt;/div&gt;</code></pre>
+</div>
+<div id="styling-with-css" class="section level2">
+<h2>Styling with CSS</h2>
+<p>We’ll use custom CSS to format messages nicely, and <em>differently</em> depending on whether they were sent by the current user or another user. CSS is tricky (for me) and beyond the scope of Shiny <em>per se</em>, but the key here is that we gave our message html divs either the class <code>chat-message-left</code> or <code>chat-message-right</code> based on who sent them. Then we can use CSS to make them distinct:</p>
+<pre class="css"><code>.chat-container .chat-message-left {
+  // format messages from the current user one way
+}
+
+.chat-container .chat-message-right {
+  // format messages from other users differently
+}</code></pre>
+<style type="text/css">
+.chat-container .chat-message-left {
+  // format messages from the current user one way
+}
+
+.chat-container .chat-message-right {
+  // format messages from other users differently
+}
+</style>
+<p>I then put the CSS into a separate file in the folder <code>www</code> and added this code up top in my UI to include it:</p>
+<pre class="r"><code>  tags$head(tags$link(rel = &quot;stylesheet&quot;, type = &quot;text/css&quot;, href = &quot;styling.css&quot;))</code></pre>
+<p><a href="https://github.com/chris31415926535/shiny.sql.chat/blob/main/www/styling.css">Take a look at the full CSS file here</a>.</p>
+</div>
+<div id="adding-some-javascript" class="section level2">
+<h2>Adding some Javascript</h2>
+<p>Finally, we’ll add two little Javascript functions to let users send a message by pressing enter, and to auto-scroll to the bottom when a new message is received. <a href="https://github.com/Appsilon/shiny.collections/blob/master/inst/examples/www/script.js">I nicked both of these from Appsilon</a>.</p>
+<p>For the enter-send, we use a small jQuery function that monitors our text input for the key “enter,” and upon detection simulates a click on our message button. In both cases we use html ids <code>#msg_text</code> and <code>#msg_buttons</code> that correspond to our objects’ internal <code>inputId</code>s in our server code.</p>
+<pre class="javascript"><code>jQuery(document).ready(function(){
+  jQuery(&#39;#msg_text&#39;).keypress(function(evt){
+    if (evt.keyCode == 13){
+      // Enter, simulate clicking send
+      jQuery(&#39;#msg_button&#39;).click();
+    }
+  });
+})</code></pre>
+<p>Finally, with our last Javascript code we monitor the element <code>chat-container</code> for new elements, and scroll to the bottom if we detect one.</p>
+</div>
+</div>
+<div id="the-result" class="section level1">
+<h1>The result!</h1>
+<p>Putting it all together, we now have a fancy chat application:</p>
+<div class="figure">
+<img src="/img/2022-10-17/app-fancy.png" width="250" alt="" />
+<p class="caption">A fancy chat application written in R with Shiny!</p>
+</div>
+<p>You can try out <a href="https://chris31415926535.shinyapps.io/shiny-sql-chat/"><strong>a completely unmoderated (!! please be respectful !!) version here</strong></a>, which will remain up for an indeterminate amount of time.</p>
+</div>
+<div id="step-4-next-steps" class="section level1">
+<h1>Step 4: Next steps?</h1>
+<p>A chat app is fun, but at the core we’ve built an engine for <em>centralized multi-user message exchanges</em>, and the same logic could be applied to cases with real-world value. For example:</p>
+<ul>
+<li>Enabling real-time communication and collaboration between concurrent users in a Shiny analytics app;</li>
+<li>Enabling users to complete and submit applications, which could be reviewed and processed by users with administrative privileges, and sending the results back to applicants; or,</li>
+<li>Enabling multi-user discrete-time simulations where commands are sent to a central server for processing, and results are sent back to users.</li>
+</ul>
+<p>As always, reach out if you have any questions or if you’d like to talk about how R and Shiny can help you achieve your goals.</p>
+</div>
+<div class="footnotes footnotes-end-of-document">
+<hr />
+<ol>
+<li id="fn1"><p><code>msg_username &lt;- paste0("ChatEnthusiast", round(runif(n=1, min=10^6,max = 10^7)))</code><a href="#fnref1" class="footnote-back">↩︎</a></p></li>
+</ol>
+</div>
