@@ -13,15 +13,15 @@ summary: 'How to build a basic chat application in R using Shiny, RSQlite databa
 authors: []
 lastmod: '2022-10-17T12:29:17-04:00'
 featured: no
-image:
+image: 
   caption: ''
   focal_point: ''
-  preview_only: no
+  preview_only: yes
 projects: []
 ---
 
 This demo shows how to build a basic chat application in R using Shiny and SQLite. It's a bit of a silly project but the underlying logic can also be used for serious business applications, and we'll use databases, html, CSS, a bit of Javascript, and a lot of R.
-
+ 
 You can try out [**a completely unmoderated (!! please be respectful !!) version here**](https://chris31415926535.shinyapps.io/shiny-sql-chat/), which will remain up for an indeterminate amount of time. 
 
 To try out the finished product yourself, [grab the code from GitHub](https://github.com/chris31415926535/shiny.sql.chat), load app.R in RStudio, and click "Run App."
