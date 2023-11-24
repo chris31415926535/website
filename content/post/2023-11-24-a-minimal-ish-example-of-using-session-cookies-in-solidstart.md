@@ -4,7 +4,7 @@ author: Christopher Belanger
 date: '2023-11-24'
 slug: a-minimal-ish-example-of-using-session-cookies-in-solidstart
 categories: []
-tags: []
+tags: [solidjs, solidstart, webdev]
 subtitle: ''
 summary: ''
 authors: []
@@ -20,7 +20,7 @@ projects: []
 
 This is a minimal working example showing how you can use session cookies to store persistent user data with Solid Start.
 
-The code itself is heavily commented and is [available on GitHub](https://github.com/chris31415926535/solidstart-sessioncookie-min-example/), and I hope in conjunction with the data dump below it helps somebody out.
+The code itself is heavily commented and is [available on GitHub](https://github.com/chris31415926535/solidstart-sessioncookie-min-example/), and I hope that in conjunction with the data dump below it helps somebody out.
 
 # What are cookies, and why?
 
