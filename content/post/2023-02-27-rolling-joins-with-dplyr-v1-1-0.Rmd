@@ -1,0 +1,214 @@
+---
+title: Rolling Joins with dplyr v1.1.0!
+author: Christopher Belanger
+date: '2023-02-27'
+slug: rolling-joins-with-dplyr-v1-1-0
+categories: []
+tags: []
+subtitle: ''
+summary: ''
+authors: []
+lastmod: '2023-02-27T15:08:34-05:00'
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: no
+projects: []
+---
+
+
+**tl;dr:** Dplyr v1.1.0 now lets you do [rolling joins](https://www.tidyverse.org/blog/2023/01/dplyr-1-1-0-joins/#rolling-joins)! 
+
+This is an unapologetically nerdy post about rolling joins, what they are, when and why they can be extremely useful, and how to do them using the programming language R and the package [dplyr](https://www.tidyverse.org/blog/2023/01/dplyr-1-1-0-joins/#rolling-joins). It's going to be completely and wonderfully in the weeds, so if you're looking for a gentle introduction to this stuff I'll refer you to [the wonderful free introductory textbook R for Data Science](https://r4ds.had.co.nz/).
+
+## What is a rolling join?
+
+**tl;dr:** A rolling join joins two tables based on an inequality rather than a strict equality.\*
+
+\* *According to a definition I just made up.*
+
+Recall that a *join* is a function that takes two `data.tables` or `tibble`s and combines them into one by matching on values from one or more character columns. Quoting from the **dplyr** version 1.0.8's documentation, historically there have been four main join functions available:
+
+* `inner_join()`: includes all rows in x and y.
+* `left_join()`: includes all rows in x.
+* `right_join()`: includes all rows in y.
+* `full_join()`: includes all rows in x or y.
+
+I use `left_join()` all the time: for example, I have a table of geospatial data for geographical regions like Statistics Canada [dissemination blocks (DBs)](https://www150.statcan.gc.ca/n1/en/catalogue/92-163-X) in one `tibble`, and I have a list of information about those regions like [census populations](https://www150.statcan.gc.ca/n1/en/catalogue/92-151-X) in another `tibble`, and I want to combine them into a third `tibble` with both the geographical information and the population information. Or it could be product names to prices, or survey question codes to human-readable questions, or anything else. I use the other `join`s less often, but they're useful too.
+
+But these functions all require *equality*: the value in column `X` in the first table needs to match the value in column `Y` in the second table exactly.
+
+Rolling joins generalize this to *inequality* relations: for example, you could join rows where the value in column `X` in the first table is less than the value in column `Y` in the second table.
+
+## When might you use a rolling join?
+
+In practice, I expect to use rolling joins in big codebases where somewhere in the middle I categorize continuous data where I've previously had to rely on a long and ugly set of `dplyr::if_then()`s or `dplyr::case_when()`s. I love those functions! But having them deep in a long set of **dplyr** calls or tucked away in helper functions means that the *business logic*--what we're trying to achieve--is hard-wired into the code base. It's not easy to see what we're doing, and it's annoying and fragile to change.
+
+## What's the benefit of a rolling join?
+
+A rolling join lets us separate our business logic from our code implementation in these cases, which can improve our code's flexibility and readability.
+
+In essence, we have turned our business logic from  *hard-wired code* into *mutable data*. A long set of if/else or case when statements can get replaced with one join, and the specifics of the join are now an input to the process. In simple cases we could define our inequality breakpoints in a `tibble` at the top of a script file, but once we go this route the sky is the limit: we could also grab our data from a csv file (editable by non-data-scientist team members) or an API (also perhaps from outside the data science team).
+
+## How do you actually do it?
+
+Schematically, a rolling join to combine `tibble1` and `tibble2` will look like this:
+
+`left_join(tibble1, tibble2, join_by(closest( [INEQUALITY STATEMENT] )))`
+
+The main difference is that instead of specifying one or more character names of columns to join by, as in `left_join(tibble1, tibble2, by="index")`, now we're using the new functions `join_by()` and `closest()` and passing an inequality statement.
+
+`join_by()` permits inequality statements, and `closest()` filters results to ensure each row in `tibble1` matches *only one* row in `tibble2`, namely the one that's closest. [If my explanation is confusing, the official documentation is great](https://dplyr.tidyverse.org/reference/join_by.html).
+
+This is all a bit abstract, so let's look at two use cases.
+
+## Use Case 1: Age-Based Discounts
+
+First, imagine our business offers age-based discounts: kids under 4 eat free, "students" under 20 get 25% off, and seniors over 65 get 25% off. 
+
+Then, say we have a set of customer data with a unique ID and their age:
+
+```{r message=FALSE,warning=FALSE}
+
+set.seed(1)
+library(dplyr, quietly = TRUE)
+
+########## age categories discount
+
+customers <- dplyr::tibble(
+  id=LETTERS[1:10],
+  age = sample(0:99, size=10,replace=TRUE)
+)
+
+customers |>
+  knitr::kable()
+```
+
+Because these categories correspond to numeric ranges, we can't do a simple join to find each customer's category. Instead, I'd normally use `case_when()` like this:
+
+```{r}
+
+customers |>
+  dplyr::mutate(discount = dplyr::case_when(
+    age > 65 ~ .25,
+    age > 20 ~ 0,
+    age > 4 ~ .25,
+    age >= 0 ~ 1
+  )) |>
+  knitr::kable()
+
+```
+
+This gets us our result, but our business logic is entwined with the code: changing the age ranges or discounts requires going deep into the code, and (for me at least) it's easy to forget where things are or to make a mistake.
+
+**Now let's try it with a rolling join.**
+
+We can define our age categories in a tibble:
+
+```{r}
+
+age_categories <- dplyr::tribble(
+  ~min_age, ~category, ~discount,
+  0, "Child", 1,
+  4, "Student", .25,
+  20, "Adult", 0,
+  65, "Senior", .25
+)
+
+age_categories |>
+  knitr::kable()
+```
+
+And then match the categories to the customer data using a rolling join, where we tell it to `join_by(closest(age >= min_age))`. In other words, for each customer, match them to the one age-category row that they are closest to and greater than. 
+
+```{r}
+purchases_categorized <- customers |>
+  dplyr::left_join(age_categories, dplyr::join_by(closest(age >= min_age))) |>
+  dplyr::select(-min_age)
+
+purchases_categorized |>
+  knitr::kable()
+
+```
+
+This again gets us our desired result, with the benefit of including category names.
+
+## Use Case 2: Scoring (and rescoring) survey response averages
+
+Now let's score a set of survey results, where participants responded to several Likert-style questions with possible answers between 1 and 5, and these scores were averaged together to create two composite scale scores.
+
+Here's our sample input data:
+
+```{r}
+
+########## Likert scale
+
+set.seed(1)
+
+survey_results <- dplyr::tibble(
+  id = LETTERS[1:10],
+  scale1 = round(runif(n=10,min=1,max=5), digits=1),
+  scale2 = round(runif(n=10,min=1,max=5), digits=1)
+)
+
+knitr::kable(survey_results)
+```
+
+Now imagine we want to categorize each composite scale score into negative, neutral, or positive. It might be reasonable to say a composite score under 2.5 is negative, one between 2.5 and 3.5 is neutral, and one greater than 3.5 is positive.
+
+We can define these breakpoints in a tibble like so:
+
+```{r}
+
+likert_categories <- dplyr::tribble(
+  ~max_score, ~category,
+  2.5, "Negative",
+  3.5, "Neutral",
+  5, "Positive"
+)
+
+knitr::kable(likert_categories)
+```
+
+And then we can use a rolling join, along with some `tidyr` magic, to categorize each composite score:
+
+```{r}
+
+survey_results |>
+  tidyr::pivot_longer(cols = -id, names_to = "question", values_to = "response") |>
+  dplyr::left_join(likert_categories, dplyr::join_by(closest(response <= max_score))) |>
+  dplyr::select(-response, -max_score) |>
+  tidyr::pivot_wider(names_from = question, values_from = category) |>
+  knitr::kable()
+```
+
+
+But wait! Now we'd like the scaled scores put into binary low/high categories, based on whether they're below or above 3. All we need to do is create another tibble with the categories:
+
+```{r}
+
+likert_categories2 <- dplyr::tribble(
+  ~max_score, ~category,
+  3, "Low",
+  5, "High"
+)
+
+knitr::kable(likert_categories2)
+
+```
+
+And repeat the rolling join:
+
+```{r}
+
+survey_results |>
+  tidyr::pivot_longer(cols = -id, names_to = "question", values_to = "response") |>
+  dplyr::left_join(likert_categories2, dplyr::join_by(closest(response <= max_score))) |>
+  dplyr::select(-response, -max_score) |>
+  tidyr::pivot_wider(names_from = question, values_from = category) |>
+  knitr::kable()
+  
+```
+
+Instead of having to dig through a bunch of `case_when()`s, we can just change the category definitions up top and let the rolling join handle the rest.

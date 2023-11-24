@@ -1,0 +1,588 @@
+---
+title: Rolling Joins with dplyr v1.1.0!
+author: Christopher Belanger
+date: '2023-02-27'
+slug: rolling-joins-with-dplyr-v1-1-0
+categories: []
+tags: []
+subtitle: ''
+summary: ''
+authors: []
+lastmod: '2023-02-27T15:08:34-05:00'
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: no
+projects: []
+---
+
+
+
+<p><strong>tl;dr:</strong> Dplyr v1.1.0 now lets you do <a href="https://www.tidyverse.org/blog/2023/01/dplyr-1-1-0-joins/#rolling-joins">rolling joins</a>!</p>
+<p>This is an unapologetically nerdy post about rolling joins, what they are, when and why they can be extremely useful, and how to do them using the programming language R and the package <a href="https://www.tidyverse.org/blog/2023/01/dplyr-1-1-0-joins/#rolling-joins">dplyr</a>. It’s going to be completely and wonderfully in the weeds, so if you’re looking for a gentle introduction to this stuff I’ll refer you to <a href="https://r4ds.had.co.nz/">the wonderful free introductory textbook R for Data Science</a>.</p>
+<div id="what-is-a-rolling-join" class="section level2">
+<h2>What is a rolling join?</h2>
+<p><strong>tl;dr:</strong> A rolling join joins two tables based on an inequality rather than a strict equality.*</p>
+<p>* <em>According to a definition I just made up.</em></p>
+<p>Recall that a <em>join</em> is a function that takes two <code>data.tables</code> or <code>tibble</code>s and combines them into one by matching on values from one or more character columns. Quoting from the <strong>dplyr</strong> version 1.0.8’s documentation, historically there have been four main join functions available:</p>
+<ul>
+<li><code>inner_join()</code>: includes all rows in x and y.</li>
+<li><code>left_join()</code>: includes all rows in x.</li>
+<li><code>right_join()</code>: includes all rows in y.</li>
+<li><code>full_join()</code>: includes all rows in x or y.</li>
+</ul>
+<p>I use <code>left_join()</code> all the time: for example, I have a table of geospatial data for geographical regions like Statistics Canada <a href="https://www150.statcan.gc.ca/n1/en/catalogue/92-163-X">dissemination blocks (DBs)</a> in one <code>tibble</code>, and I have a list of information about those regions like <a href="https://www150.statcan.gc.ca/n1/en/catalogue/92-151-X">census populations</a> in another <code>tibble</code>, and I want to combine them into a third <code>tibble</code> with both the geographical information and the population information. Or it could be product names to prices, or survey question codes to human-readable questions, or anything else. I use the other <code>join</code>s less often, but they’re useful too.</p>
+<p>But these functions all require <em>equality</em>: the value in column <code>X</code> in the first table needs to match the value in column <code>Y</code> in the second table exactly.</p>
+<p>Rolling joins generalize this to <em>inequality</em> relations: for example, you could join rows where the value in column <code>X</code> in the first table is less than the value in column <code>Y</code> in the second table.</p>
+</div>
+<div id="when-might-you-use-a-rolling-join" class="section level2">
+<h2>When might you use a rolling join?</h2>
+<p>In practice, I expect to use rolling joins in big codebases where somewhere in the middle I categorize continuous data where I’ve previously had to rely on a long and ugly set of <code>dplyr::if_then()</code>s or <code>dplyr::case_when()</code>s. I love those functions! But having them deep in a long set of <strong>dplyr</strong> calls or tucked away in helper functions means that the <em>business logic</em>–what we’re trying to achieve–is hard-wired into the code base. It’s not easy to see what we’re doing, and it’s annoying and fragile to change.</p>
+</div>
+<div id="whats-the-benefit-of-a-rolling-join" class="section level2">
+<h2>What’s the benefit of a rolling join?</h2>
+<p>A rolling join lets us separate our business logic from our code implementation in these cases, which can improve our code’s flexibility and readability.</p>
+<p>In essence, we have turned our business logic from <em>hard-wired code</em> into <em>mutable data</em>. A long set of if/else or case when statements can get replaced with one join, and the specifics of the join are now an input to the process. In simple cases we could define our inequality breakpoints in a <code>tibble</code> at the top of a script file, but once we go this route the sky is the limit: we could also grab our data from a csv file (editable by non-data-scientist team members) or an API (also perhaps from outside the data science team).</p>
+</div>
+<div id="how-do-you-actually-do-it" class="section level2">
+<h2>How do you actually do it?</h2>
+<p>Schematically, a rolling join to combine <code>tibble1</code> and <code>tibble2</code> will look like this:</p>
+<p><code>left_join(tibble1, tibble2, join_by(closest( [INEQUALITY STATEMENT] )))</code></p>
+<p>The main difference is that instead of specifying one or more character names of columns to join by, as in <code>left_join(tibble1, tibble2, by="index")</code>, now we’re using the new functions <code>join_by()</code> and <code>closest()</code> and passing an inequality statement.</p>
+<p><code>join_by()</code> permits inequality statements, and <code>closest()</code> filters results to ensure each row in <code>tibble1</code> matches <em>only one</em> row in <code>tibble2</code>, namely the one that’s closest. <a href="https://dplyr.tidyverse.org/reference/join_by.html">If my explanation is confusing, the official documentation is great</a>.</p>
+<p>This is all a bit abstract, so let’s look at two use cases.</p>
+</div>
+<div id="use-case-1-age-based-discounts" class="section level2">
+<h2>Use Case 1: Age-Based Discounts</h2>
+<p>First, imagine our business offers age-based discounts: kids under 4 eat free, “students” under 20 get 25% off, and seniors over 65 get 25% off.</p>
+<p>Then, say we have a set of customer data with a unique ID and their age:</p>
+<pre class="r"><code>set.seed(1)
+library(dplyr, quietly = TRUE)
+
+########## age categories discount
+
+customers &lt;- dplyr::tibble(
+  id=LETTERS[1:10],
+  age = sample(0:99, size=10,replace=TRUE)
+)
+
+customers |&gt;
+  knitr::kable()</code></pre>
+<table>
+<thead>
+<tr class="header">
+<th align="left">id</th>
+<th align="right">age</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">A</td>
+<td align="right">67</td>
+</tr>
+<tr class="even">
+<td align="left">B</td>
+<td align="right">38</td>
+</tr>
+<tr class="odd">
+<td align="left">C</td>
+<td align="right">0</td>
+</tr>
+<tr class="even">
+<td align="left">D</td>
+<td align="right">33</td>
+</tr>
+<tr class="odd">
+<td align="left">E</td>
+<td align="right">86</td>
+</tr>
+<tr class="even">
+<td align="left">F</td>
+<td align="right">42</td>
+</tr>
+<tr class="odd">
+<td align="left">G</td>
+<td align="right">13</td>
+</tr>
+<tr class="even">
+<td align="left">H</td>
+<td align="right">81</td>
+</tr>
+<tr class="odd">
+<td align="left">I</td>
+<td align="right">58</td>
+</tr>
+<tr class="even">
+<td align="left">J</td>
+<td align="right">50</td>
+</tr>
+</tbody>
+</table>
+<p>Because these categories correspond to numeric ranges, we can’t do a simple join to find each customer’s category. Instead, I’d normally use <code>case_when()</code> like this:</p>
+<pre class="r"><code>customers |&gt;
+  dplyr::mutate(discount = dplyr::case_when(
+    age &gt; 65 ~ .25,
+    age &gt; 20 ~ 0,
+    age &gt; 4 ~ .25,
+    age &gt;= 0 ~ 1
+  )) |&gt;
+  knitr::kable()</code></pre>
+<table>
+<thead>
+<tr class="header">
+<th align="left">id</th>
+<th align="right">age</th>
+<th align="right">discount</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">A</td>
+<td align="right">67</td>
+<td align="right">0.25</td>
+</tr>
+<tr class="even">
+<td align="left">B</td>
+<td align="right">38</td>
+<td align="right">0.00</td>
+</tr>
+<tr class="odd">
+<td align="left">C</td>
+<td align="right">0</td>
+<td align="right">1.00</td>
+</tr>
+<tr class="even">
+<td align="left">D</td>
+<td align="right">33</td>
+<td align="right">0.00</td>
+</tr>
+<tr class="odd">
+<td align="left">E</td>
+<td align="right">86</td>
+<td align="right">0.25</td>
+</tr>
+<tr class="even">
+<td align="left">F</td>
+<td align="right">42</td>
+<td align="right">0.00</td>
+</tr>
+<tr class="odd">
+<td align="left">G</td>
+<td align="right">13</td>
+<td align="right">0.25</td>
+</tr>
+<tr class="even">
+<td align="left">H</td>
+<td align="right">81</td>
+<td align="right">0.25</td>
+</tr>
+<tr class="odd">
+<td align="left">I</td>
+<td align="right">58</td>
+<td align="right">0.00</td>
+</tr>
+<tr class="even">
+<td align="left">J</td>
+<td align="right">50</td>
+<td align="right">0.00</td>
+</tr>
+</tbody>
+</table>
+<p>This gets us our result, but our business logic is entwined with the code: changing the age ranges or discounts requires going deep into the code, and (for me at least) it’s easy to forget where things are or to make a mistake.</p>
+<p><strong>Now let’s try it with a rolling join.</strong></p>
+<p>We can define our age categories in a tibble:</p>
+<pre class="r"><code>age_categories &lt;- dplyr::tribble(
+  ~min_age, ~category, ~discount,
+  0, &quot;Child&quot;, 1,
+  4, &quot;Student&quot;, .25,
+  20, &quot;Adult&quot;, 0,
+  65, &quot;Senior&quot;, .25
+)
+
+age_categories |&gt;
+  knitr::kable()</code></pre>
+<table>
+<thead>
+<tr class="header">
+<th align="right">min_age</th>
+<th align="left">category</th>
+<th align="right">discount</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="right">0</td>
+<td align="left">Child</td>
+<td align="right">1.00</td>
+</tr>
+<tr class="even">
+<td align="right">4</td>
+<td align="left">Student</td>
+<td align="right">0.25</td>
+</tr>
+<tr class="odd">
+<td align="right">20</td>
+<td align="left">Adult</td>
+<td align="right">0.00</td>
+</tr>
+<tr class="even">
+<td align="right">65</td>
+<td align="left">Senior</td>
+<td align="right">0.25</td>
+</tr>
+</tbody>
+</table>
+<p>And then match the categories to the customer data using a rolling join, where we tell it to <code>join_by(closest(age &gt;= min_age))</code>. In other words, for each customer, match them to the one age-category row that they are closest to and greater than.</p>
+<pre class="r"><code>purchases_categorized &lt;- customers |&gt;
+  dplyr::left_join(age_categories, dplyr::join_by(closest(age &gt;= min_age))) |&gt;
+  dplyr::select(-min_age)
+
+purchases_categorized |&gt;
+  knitr::kable()</code></pre>
+<table>
+<thead>
+<tr class="header">
+<th align="left">id</th>
+<th align="right">age</th>
+<th align="left">category</th>
+<th align="right">discount</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">A</td>
+<td align="right">67</td>
+<td align="left">Senior</td>
+<td align="right">0.25</td>
+</tr>
+<tr class="even">
+<td align="left">B</td>
+<td align="right">38</td>
+<td align="left">Adult</td>
+<td align="right">0.00</td>
+</tr>
+<tr class="odd">
+<td align="left">C</td>
+<td align="right">0</td>
+<td align="left">Child</td>
+<td align="right">1.00</td>
+</tr>
+<tr class="even">
+<td align="left">D</td>
+<td align="right">33</td>
+<td align="left">Adult</td>
+<td align="right">0.00</td>
+</tr>
+<tr class="odd">
+<td align="left">E</td>
+<td align="right">86</td>
+<td align="left">Senior</td>
+<td align="right">0.25</td>
+</tr>
+<tr class="even">
+<td align="left">F</td>
+<td align="right">42</td>
+<td align="left">Adult</td>
+<td align="right">0.00</td>
+</tr>
+<tr class="odd">
+<td align="left">G</td>
+<td align="right">13</td>
+<td align="left">Student</td>
+<td align="right">0.25</td>
+</tr>
+<tr class="even">
+<td align="left">H</td>
+<td align="right">81</td>
+<td align="left">Senior</td>
+<td align="right">0.25</td>
+</tr>
+<tr class="odd">
+<td align="left">I</td>
+<td align="right">58</td>
+<td align="left">Adult</td>
+<td align="right">0.00</td>
+</tr>
+<tr class="even">
+<td align="left">J</td>
+<td align="right">50</td>
+<td align="left">Adult</td>
+<td align="right">0.00</td>
+</tr>
+</tbody>
+</table>
+<p>This again gets us our desired result, with the benefit of including category names.</p>
+</div>
+<div id="use-case-2-scoring-and-rescoring-survey-response-averages" class="section level2">
+<h2>Use Case 2: Scoring (and rescoring) survey response averages</h2>
+<p>Now let’s score a set of survey results, where participants responded to several Likert-style questions with possible answers between 1 and 5, and these scores were averaged together to create two composite scale scores.</p>
+<p>Here’s our sample input data:</p>
+<pre class="r"><code>########## Likert scale
+
+set.seed(1)
+
+survey_results &lt;- dplyr::tibble(
+  id = LETTERS[1:10],
+  scale1 = round(runif(n=10,min=1,max=5), digits=1),
+  scale2 = round(runif(n=10,min=1,max=5), digits=1)
+)
+
+knitr::kable(survey_results)</code></pre>
+<table>
+<thead>
+<tr class="header">
+<th align="left">id</th>
+<th align="right">scale1</th>
+<th align="right">scale2</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">A</td>
+<td align="right">2.1</td>
+<td align="right">1.8</td>
+</tr>
+<tr class="even">
+<td align="left">B</td>
+<td align="right">2.5</td>
+<td align="right">1.7</td>
+</tr>
+<tr class="odd">
+<td align="left">C</td>
+<td align="right">3.3</td>
+<td align="right">3.7</td>
+</tr>
+<tr class="even">
+<td align="left">D</td>
+<td align="right">4.6</td>
+<td align="right">2.5</td>
+</tr>
+<tr class="odd">
+<td align="left">E</td>
+<td align="right">1.8</td>
+<td align="right">4.1</td>
+</tr>
+<tr class="even">
+<td align="left">F</td>
+<td align="right">4.6</td>
+<td align="right">3.0</td>
+</tr>
+<tr class="odd">
+<td align="left">G</td>
+<td align="right">4.8</td>
+<td align="right">3.9</td>
+</tr>
+<tr class="even">
+<td align="left">H</td>
+<td align="right">3.6</td>
+<td align="right">5.0</td>
+</tr>
+<tr class="odd">
+<td align="left">I</td>
+<td align="right">3.5</td>
+<td align="right">2.5</td>
+</tr>
+<tr class="even">
+<td align="left">J</td>
+<td align="right">1.2</td>
+<td align="right">4.1</td>
+</tr>
+</tbody>
+</table>
+<p>Now imagine we want to categorize each composite scale score into negative, neutral, or positive. It might be reasonable to say a composite score under 2.5 is negative, one between 2.5 and 3.5 is neutral, and one greater than 3.5 is positive.</p>
+<p>We can define these breakpoints in a tibble like so:</p>
+<pre class="r"><code>likert_categories &lt;- dplyr::tribble(
+  ~max_score, ~category,
+  2.5, &quot;Negative&quot;,
+  3.5, &quot;Neutral&quot;,
+  5, &quot;Positive&quot;
+)
+
+knitr::kable(likert_categories)</code></pre>
+<table>
+<thead>
+<tr class="header">
+<th align="right">max_score</th>
+<th align="left">category</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="right">2.5</td>
+<td align="left">Negative</td>
+</tr>
+<tr class="even">
+<td align="right">3.5</td>
+<td align="left">Neutral</td>
+</tr>
+<tr class="odd">
+<td align="right">5.0</td>
+<td align="left">Positive</td>
+</tr>
+</tbody>
+</table>
+<p>And then we can use a rolling join, along with some <code>tidyr</code> magic, to categorize each composite score:</p>
+<pre class="r"><code>survey_results |&gt;
+  tidyr::pivot_longer(cols = -id, names_to = &quot;question&quot;, values_to = &quot;response&quot;) |&gt;
+  dplyr::left_join(likert_categories, dplyr::join_by(closest(response &lt;= max_score))) |&gt;
+  dplyr::select(-response, -max_score) |&gt;
+  tidyr::pivot_wider(names_from = question, values_from = category) |&gt;
+  knitr::kable()</code></pre>
+<table>
+<thead>
+<tr class="header">
+<th align="left">id</th>
+<th align="left">scale1</th>
+<th align="left">scale2</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">A</td>
+<td align="left">Negative</td>
+<td align="left">Negative</td>
+</tr>
+<tr class="even">
+<td align="left">B</td>
+<td align="left">Negative</td>
+<td align="left">Negative</td>
+</tr>
+<tr class="odd">
+<td align="left">C</td>
+<td align="left">Neutral</td>
+<td align="left">Positive</td>
+</tr>
+<tr class="even">
+<td align="left">D</td>
+<td align="left">Positive</td>
+<td align="left">Negative</td>
+</tr>
+<tr class="odd">
+<td align="left">E</td>
+<td align="left">Negative</td>
+<td align="left">Positive</td>
+</tr>
+<tr class="even">
+<td align="left">F</td>
+<td align="left">Positive</td>
+<td align="left">Neutral</td>
+</tr>
+<tr class="odd">
+<td align="left">G</td>
+<td align="left">Positive</td>
+<td align="left">Positive</td>
+</tr>
+<tr class="even">
+<td align="left">H</td>
+<td align="left">Positive</td>
+<td align="left">Positive</td>
+</tr>
+<tr class="odd">
+<td align="left">I</td>
+<td align="left">Neutral</td>
+<td align="left">Negative</td>
+</tr>
+<tr class="even">
+<td align="left">J</td>
+<td align="left">Negative</td>
+<td align="left">Positive</td>
+</tr>
+</tbody>
+</table>
+<p>But wait! Now we’d like the scaled scores put into binary low/high categories, based on whether they’re below or above 3. All we need to do is create another tibble with the categories:</p>
+<pre class="r"><code>likert_categories2 &lt;- dplyr::tribble(
+  ~max_score, ~category,
+  3, &quot;Low&quot;,
+  5, &quot;High&quot;
+)
+
+knitr::kable(likert_categories2)</code></pre>
+<table>
+<thead>
+<tr class="header">
+<th align="right">max_score</th>
+<th align="left">category</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="right">3</td>
+<td align="left">Low</td>
+</tr>
+<tr class="even">
+<td align="right">5</td>
+<td align="left">High</td>
+</tr>
+</tbody>
+</table>
+<p>And repeat the rolling join:</p>
+<pre class="r"><code>survey_results |&gt;
+  tidyr::pivot_longer(cols = -id, names_to = &quot;question&quot;, values_to = &quot;response&quot;) |&gt;
+  dplyr::left_join(likert_categories2, dplyr::join_by(closest(response &lt;= max_score))) |&gt;
+  dplyr::select(-response, -max_score) |&gt;
+  tidyr::pivot_wider(names_from = question, values_from = category) |&gt;
+  knitr::kable()</code></pre>
+<table>
+<thead>
+<tr class="header">
+<th align="left">id</th>
+<th align="left">scale1</th>
+<th align="left">scale2</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">A</td>
+<td align="left">Low</td>
+<td align="left">Low</td>
+</tr>
+<tr class="even">
+<td align="left">B</td>
+<td align="left">Low</td>
+<td align="left">Low</td>
+</tr>
+<tr class="odd">
+<td align="left">C</td>
+<td align="left">High</td>
+<td align="left">High</td>
+</tr>
+<tr class="even">
+<td align="left">D</td>
+<td align="left">High</td>
+<td align="left">Low</td>
+</tr>
+<tr class="odd">
+<td align="left">E</td>
+<td align="left">Low</td>
+<td align="left">High</td>
+</tr>
+<tr class="even">
+<td align="left">F</td>
+<td align="left">High</td>
+<td align="left">Low</td>
+</tr>
+<tr class="odd">
+<td align="left">G</td>
+<td align="left">High</td>
+<td align="left">High</td>
+</tr>
+<tr class="even">
+<td align="left">H</td>
+<td align="left">High</td>
+<td align="left">High</td>
+</tr>
+<tr class="odd">
+<td align="left">I</td>
+<td align="left">High</td>
+<td align="left">Low</td>
+</tr>
+<tr class="even">
+<td align="left">J</td>
+<td align="left">Low</td>
+<td align="left">High</td>
+</tr>
+</tbody>
+</table>
+<p>Instead of having to dig through a bunch of <code>case_when()</code>s, we can just change the category definitions up top and let the rolling join handle the rest.</p>
+</div>

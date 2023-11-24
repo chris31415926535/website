@@ -1,0 +1,341 @@
+---
+title: 'Starbucks and Tim Horton''s: A Geomarketing Case Study'
+author: Christopher Belanger
+date: '2021-03-16'
+draft: yes
+slug: starbucks-and-tim-horton-s-a-geomarketing-case-study
+categories: []
+tags:
+  - RStats
+  - geospatial
+  - valhallr
+  - marketing
+subtitle: ''
+summary: ''
+authors: []
+lastmod: '2021-03-09T14:37:22-05:00'
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: no
+projects: []
+
+---
+
+```{r setup, message = FALSE, warning = FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+
+library(tidyverse)
+library(sf)
+library(leaflet)
+library(valhallr)
+library(onsr)
+library(htmltools)
+library(fontawesome)
+library(widgetframe)
+```
+
+
+# Introduction
+
+Do Starbucks and Tim Horton's different brand strategies lead to different retail locations? In this short geomarketing case study we'll combine web-scraped location data, road network analysis, census data, and some statistics to see if we can find a difference in location strategies between Starbucks and Tim Horton's in Ottawa, Ontario.
+
+Starbucks' image is the aspirational "cool" place to grab a chai latte, and Tim Horton's is the coffee-of-the-people place for grabbing a joe on your way to hockey practice. I was curious to see if these brand positions extended to their retail placement strategies. 
+
+For simplicity we'll look at store locations' "pedestrian catchment areas," which we'll define as places you can walk to within 10 minutes. My hunch was that Starbucks' stores tend to be in higher-income areas, so within those catchment areas we'll look at average household total income before tax from the 2016 Canadian census.
+
+Boiling it all down, we get the following:
+
+**Research Question:** Do Ottawa's Starbucks and Tim Horton's stores have pedestrian catchment areas with statistically significant differences in economic profiles?
+
+Like all good adventures, this one starts with a map.
+
+# Coffee Shop Locations
+
+```{r load_data, message = FALSE, warning = FALSE, echo = FALSE}
+ott_shp <- onsr::get_ons_shp() %>%
+  sf::st_union() %>% 
+  sf::st_as_sf() %>%
+  sf::st_transform(crs = "WGS84")
+
+starbucks_shp <- read_csv("../../static/data/2021-03-16-starbucks.csv") %>%
+  sf::st_as_sf(coords = c("longitude", "latitude"), 
+               crs = "WGS84",
+               remove = FALSE) %>%
+  sf::st_join(ott_shp, left = FALSE) %>%
+  rename(lat = latitude,
+         lon = longitude)
+
+tims_shp <- read_csv("../../static/data/2021-03-16-tim_hortons.csv") %>%
+  sf::st_as_sf(coords = c("lon", "lat"), 
+               crs = "WGS84",
+               remove = FALSE) %>%
+  sf::st_join(ott_shp, left = FALSE)
+```
+
+
+This map shows all Tim Horton's (orange markers) and Starbucks (green markers) locations within Ottawa. I scraped the data from each company's "find a store" service on March 8.^[A note about data sources: I grabbed this data from [Starbucks'](https://www.starbucks.ca/store-locator) and [Tim Horton's](https://www.timhortons.com/store-locator/) store locators on or around March 8. I used the Chrome dev console and the **rvest** package to reverse-engineer their APIs, then made custom calls and parsed & saved the results. Both companies kindly included latitudes & longitudes. I got all the locations they would give me, but since their APIs are a black box I can't be sure I got them all (I'll say more below in the Limitations section). But the process was messy and complicated and not related to geomarketing, so I'll save the details for another post.] Hover your mouse over a symbol see some basic location details.^[[Thanks to FontAwesome for the coffee logo.](https://fontawesome.com/license)]
+
+```{r map_locations, echo = FALSE}
+
+sb_labs <- paste0("Starbucks", 
+                  "<br>Address: ",starbucks_shp$streetAddressLine1,
+                  "<br>Phone #: ", starbucks_shp$phoneNumber) %>%
+  purrr::map(htmltools::HTML)
+
+tim_labs <- paste0(    "Tim Horton's",
+                   "<br>Address: ", tims_shp$address1,
+                   "<br>Phone #: ", tims_shp$phoneNumber) %>%
+  purrr::map(htmltools::HTML)
+
+leaflet_map <- leaflet() %>%
+  addTiles() %>%
+  addAwesomeMarkers(data = starbucks_shp,
+                    icon = awesomeIcons(library = "fa",
+                                        icon = "coffee",
+                                        markerColor = "green"),
+                    label = sb_labs) %>%
+  addAwesomeMarkers(data = tims_shp,
+                    icon = awesomeIcons(library = "fa",
+                                        icon = "coffee",
+                                        markerColor = "orange"),
+                   label = tim_labs)
+
+# need this or else the icons won't render properly
+# known-ish issue https://github.com/rstudio/blogdown/issues/20
+widgetframe::frameWidget(leaflet_map, width = "100%")
+```
+
+The map makes a few things clear. First, there are more Tim's locations (101) than Starbucks (86), which might affect our analysis. Second, there is some evidence that they're pursuing different location strategies: for example, both have many locations in the downtown core, but Starbucks has Westboro to itself and Tim Horton's is alone in Beacon Hill.
+
+So this answers our first basic question: yes, it looks like Tim Horton's and Starbucks are at least sometimes setting up shop in different places.
+
+# Walking Catchment Areas
+
+Next we need to find out which areas are walkable from each store. I made two decisions:
+
+* **We'll use census dissemination areas (DAs) as geographical units.** DAs are pretty small in urban areas--roughly a few city blocks--and are the smallest region for which StatsCan gives out detailed demographic data.
+* **We'll look at 10-minute walk times.** This point's debatable, but a 10-minute limit ensures we're looking at each shop's immediate neighbourhood.
+
+We'll find travel distances and times using the Valhalla routing engine and the R package **valhallr**, [which you can read more about here](/post/2021-03-05-valhallr-an-r-interface-to-the-valhalla-routing-engine/) (shameless plug: I wrote this package). There are a few ways we could do this, but the most scalable is to find the distance between _all_ stores and _all_ DAs using `valhallr::od_table()`, and then filter that list for trips of our desired length.^[By calculating each trip we're doing more work than we would by, for example, finding isochrones for each store and then doing a spatial join/filter. But this method has a few advantages: it's simple, since it's a single call to Valhalla followed by a single call to `dplyr::filter()`; it's flexible, since once we have the big table we can experiment with different cutoff values; and it's honestly about as fast, since Valhalla's pretty quick.]
+
+I'll bury the details in the code, but the results give us a big table that shows each dissemination area/coffee shop pair that's within a 10-minute walk.
+
+```{r, eval = FALSE}
+ott_das <- read_sf("../../static/data/shapefiles/2021-03-16-ottawa_das.shp")
+
+ott_da_centroids <- ott_das %>%
+  sf::st_centroid() %>%
+  sf::st_transform(crs = "WGS84") %>%
+  mutate(lat = sf::st_coordinates(geometry)[,2],
+         lon = sf::st_coordinates(geometry)[,1])
+
+
+tim_dist <- valhallr::od_table(froms = ott_da_centroids,
+                               from_id_col = "DAUID",
+                               tos= tims_shp,
+                               to_id_col = "address1",
+                               batch_size = 5,
+                               costing = "pedestrian",
+                               host = "192.168.2.30",
+                               verbose = TRUE)
+
+sb_dist <- valhallr::od_table(froms = ott_da_centroids,
+                              from_id_col = "DAUID",
+                              tos = starbucks_shp,
+                              to_id_col = "streetAddressLine1",
+                              batch_size = 5,
+                              costing = "pedestrian",
+                              host = "192.168.2.30",
+                              verbose = TRUE)
+
+# now filter for trips under the desired number of minutes
+minutes <- 10
+
+sb_dist <- sb_dist %>%
+  filter(time < 60 * minutes) %>%
+  mutate(shop = "starbucks") %>%
+  distinct()
+
+tim_dist <- tim_dist %>% 
+  filter(time < 60 * minutes) %>%
+  mutate(shop = "tims") %>%
+  distinct()
+  
+
+coffee_shops <- bind_rows(sb_dist, tim_dist)
+
+coffee_shops %>%
+  mutate(streetAddressLine1 = if_else(is.na(streetAddressLine1), address1, streetAddressLine1)) %>%
+  select(DAUID, shop, streetAddressLine1, distance, time) %>%
+  knitr::kable(booktabs = TRUE,
+               col.names = c("DAUID", "Shop", "Address", "Distance (km)", "Time (s)")) %>%
+  kableExtra::kable_styling(bootstrap_options = "striped") %>%
+  kableExtra::add_header_above(c("Walk Distances and Times: Dissemination Areas to Coffee Shops" = 5))%>%
+  kableExtra::scroll_box(height = "300px") 
+```
+
+```{r echo = FALSE, eval = FALSE}
+# secret code to save results
+tim_dist %>% write_csv("../../static/data/2021-03-09-tim_dist.csv")
+sb_dist %>% write_csv("../../static/data/2021-03-09-sb_dist.csv")
+```
+
+
+```{r echo = FALSE, eval = TRUE}
+# secret code to load saved results
+sb_dist <- read_csv("../../static/data/2021-03-09-sb_dist.csv") 
+tim_dist <- read_csv("../../static/data/2021-03-09-tim_dist.csv")
+```
+
+
+```{r, echo = FALSE}
+minutes <- 10
+
+sb_dist <- sb_dist %>% # read_csv("../../static/data/2021-03-09-sb_dist.csv") %>%
+  filter(time < 60 * minutes) %>%
+  mutate(shop = "starbucks") %>%
+  distinct()
+
+tim_dist <- tim_dist %>% #read_csv("../../static/data/2021-03-09-tim_dist.csv") %>%
+  filter(time < 60 * minutes) %>%
+  mutate(shop = "tims") %>%
+  distinct()
+  
+
+coffee_shops <- bind_rows(sb_dist, tim_dist)
+
+coffee_shops %>%
+  mutate(streetAddressLine1 = if_else(is.na(streetAddressLine1), address1, streetAddressLine1)) %>%
+  select(DAUID, shop, streetAddressLine1, distance, time) %>%
+  mutate(streetAddressLine1 = snakecase::to_title_case(streetAddressLine1),
+         shop = snakecase::to_title_case(shop)) %>%
+  knitr::kable(booktabs = TRUE,
+               col.names = c("DAUID", "Address", "Distance (km)", "Time (s)", "Shop")) %>%
+  kableExtra::kable_styling(bootstrap_options = "striped") %>%
+  kableExtra::add_header_above(c("Walk Distances and Times: Dissemination Areas to Coffee Shops" = 5))%>%
+  kableExtra::scroll_box(height = "300px") 
+```
+
+
+# Getting the Census Data
+
+* Median personal total income before tax;
+* Average personal total income before tax;
+* Median household total income before tax;
+* Average household total income before tax; and
+* Low-income prevalence based on the low-income measure, after tax (LIM-AT).
+
+```{r, eval = FALSE}
+# separate out the unique DA identifiers
+das <- coffee_shops %>%
+  select(DAUID) %>%
+  distinct()
+
+# construct StatsCan-formatted universal identifiers from them that we can feed
+# to their API
+dguids <- onsr::census_make_dguid(data = das,
+                        type = "DA")
+
+# plug those identifiers into the API, and ask for income information (topic 7)
+# with no notes, and give us raw counts rather than percentages (stat 0)
+# then we filter for the five metrics we're interested in.
+census_data <- onsr::census_get_data(dguids = dguids$dguid,
+                      topic = 7,
+                      notes = 0,
+                      stat = 0,
+                      lang = "E") %>%
+  filter (TEXT_ID %in% c("12002", "12013", "13001", "13010", "15010" )) %>%
+  #mutate(DAUID = as.character(GEO_ID)) %>%
+  select(DAUID = GEO_ID, TEXT_ID, T_DATA_DONNEE) %>%
+  pivot_wider(values_from = T_DATA_DONNEE, names_from = "TEXT_ID") %>%
+  rename (med_personal = 2,
+          avg_person = 3,
+          med_household = 4,
+          avg_household = 5,
+          lim_at = 6)
+
+# combine the census data with the coffee-shop data
+coffee_shops <- coffee_shops %>%
+  left_join(census_data)
+
+```
+
+```{r echo = FALSE, eval = FALSE}
+# secret code to save census data
+census_data %>% write_csv("../../static/data/2021-03-09-census.csv")
+```
+
+```{r, echo = FALSE}
+#secret code to load census data
+census_data <- read_csv("../../static/data/2021-03-09-census.csv") %>% 
+  filter (TEXT_ID %in% c("12002", "12013", "13001", "13010", "15010" )) %>%
+  #mutate(DAUID = as.character(GEO_ID)) %>%
+  select(DAUID = GEO_ID, TEXT_ID, T_DATA_DONNEE) %>%
+  pivot_wider(values_from = T_DATA_DONNEE, names_from = "TEXT_ID") %>%
+  rename (med_personal = 2,
+          avg_person = 3,
+          med_household = 4,
+          avg_household = 5,
+          lim_at = 6)
+
+coffee_shops <- coffee_shops %>%
+  left_join(census_data)
+```
+
+
+# Visualize!
+
+
+
+```{r}
+
+boxplot <- coffee_shops %>%
+  group_by(shop) %>%
+  ggplot() +
+  geom_boxplot(aes(x=shop, y = avg_household)) +
+  coord_flip() +
+  theme_minimal() +
+  scale_y_continuous(labels = scales::dollar) +
+  scale_x_discrete(labels = c("Starbucks", "Tim Horton's")) +
+  labs(x = NULL,
+       y = "Average 2016 Total Household Income, Before Tax")
+
+plotly::ggplotly(boxplot)
+
+```
+
+
+
+
+```{r}
+all_vals <- coffee_shops %>%
+  select(shop, avg_household) %>%
+  pivot_wider(names_from = "shop",
+              values_from = "avg_household")
+
+wilcox.test(all_vals$starbucks[[1]], all_vals$tims[[1]]) %>%
+  broom::tidy() %>%
+  select(statistic, p.value) %>%
+  mutate(p.value = round(p.value, digits = 3)) %>%
+  knitr::kable(col.names = c("Statistic", "p-value")) %>%
+  kableExtra::add_header_above(c("Wilcoxon Rank-Sum Test, Two-Sided"=2))
+```
+
+
+# How about those outliers?
+
+
+FIXME check out DAs 35061091 and 35060438 
+
+# Limitations
+
+* Might be missing some store locations
+* Might be looking at wrong demographic information
+* Old census data
+
+# Conclusion
+
+
+

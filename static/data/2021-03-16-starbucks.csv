@@ -1,0 +1,107 @@
+storeNumber,id,name,phoneNumber,brandName,ownershipTypeCode,open,openStatusText,latitude,longitude,streetAddressLine1,streetAddressLine2,streetAddressLine3,city,countrySubdivisionCode,countryCode,postalCode
+55298-289122,1024933,78-80 Dufferin Street,3434028352,Starbucks,CO,TRUE,Open until 09:00,44.908766,-76.265845,78-80 Dufferin Street,NA,NA,Perth,ON,CA,K7H 2R9
+4904-114726,508,505 McNeely Road,613-253-1760,Starbucks,CO,TRUE,Open until 09:30,45.132047,-76.119243,505 McNeely Road,NA,Carleton Place Colonnade,Carleton Place,ON,CA,K7C 0A8
+57873-290737,1027739,123 Lombard Street,6134850312,Starbucks,CO,TRUE,Open until 09:00,44.890498,-76.031403,123 Lombard Street,NA,NA,Smiths Falls,ON,CA,K7A 5B8
+52378-278465,1025696,8555 Campeau Drive,3439985876,Starbucks,CO,TRUE,Open until 09:30,45.295791,-75.939319,8555 Campeau Drive,NA,Tanger Outlets Ottawa,Ottawa,ON,CA,K2S 1B9
+4575-95544,939,500 Terry Fox Drive,613-254-5775,Starbucks,CO,TRUE,Open until 09:30,45.308831,-75.916744,500 Terry Fox Drive,NA,NA,Kanata,ON,CA,K2T 1C3
+4336-1907,1279,400 Earl Grey Drive,613-599-6680,Starbucks,CO,TRUE,Open until 07:00,45.311608,-75.914139,400 Earl Grey Drive,NA,NA,Kanata,ON,CA,K2T 1B9
+4922-107288,837,690 Eagleson Road,613-595-1569,Starbucks,CO,TRUE,Open until 10:00,45.286754,-75.867724,690 Eagleson Road,NA,NA,Ottawa,ON,CA,K2M 2G9
+4472-274490,1018080,457 Hazeldean Road,6138363663,Starbucks,CO,TRUE,Open until 10:00,45.300168,-75.885751,457 Hazeldean Road,NA,NA,Kanata,ON,CA,K2L 1V1
+53909-286089,1022248,5055 Innovation Drive,6134625893,Starbucks,CO,TRUE,Open until 09:30,45.34419,-75.930411,5055 Innovation Drive,NA,NA,Kanata,ON,CA,K2K 3K1
+60967-295228,1029113,4055 Carling Ave,3439967164,Starbucks,CO,TRUE,Open until 09:00,45.338501,-75.907865,4055 Carling Ave,1,NA,Kanata,ON,CA,K2K 2A4
+4458-84661,1351,1831 Robertson Road,613-726-6565,Starbucks,CO,TRUE,Open until 08:00,45.328247,-75.818912,1831 Robertson Road,NA,Stafford Centre,Nepean,ON,CA,K2H 8X3
+60046-292771,1025395,loblaws  ottawa greenbank rd #1035,6138250812,Starbucks,LS,TRUE,Open until 08:00,45.268559,-75.743819,3201 Greenbank Rd,NA,NA,Ottawa,ON,CA,k2j 4h9
+15908-154985,66437,1181 Greenbank Road,6138430265,Starbucks,CO,TRUE,Open until 10:00,45.274453,-75.748235,1181 Greenbank Road,NA,NA,Ottawa,ON,CA,K2J 4Y6
+49671-270244,1020858,3000 Wellington Road,6134102291,Starbucks,CO,TRUE,Open until 09:00,45.030333,-75.634758,3000 Wellington Road,NA,NA,Kemptville,ON,CA,K0G 1J0
+15700-162804,68127,100 Bayshore Drive,613-828-6732,Starbucks,CO,TRUE,Open until 07:30,45.347583,-75.806783,100 Bayshore Drive,K30,Bayshore Shopping Centre,Ottawa,ON,CA,K2B 8C1
+4683-100798,478,3302 Woodroffe Avenue,613-823-9903,Starbucks,CO,TRUE,Open until 10:00,45.275131,-75.718766,3302 Woodroffe Avenue,NA,NA,Ottawa,ON,CA,K2J 4G5
+4287-919,1282,2735 Iris Street,(613) 820-0032,Starbucks,CO,TRUE,Open until 09:30,45.349511,-75.787953,2735 Iris Street,NA,NA,Ottawa,ON,CA,K2C 3S4
+51937-280068,1019669,1379 Woodroffe Avenue,343 9997013,Starbucks,CO,TRUE,Open until 09:00,45.350365,-75.761738,1379 Woodroffe Avenue,NA,NA,Nepean,ON,CA,K2G 1V7
+17799-168425,90549,Algonquin College-Student Commons,613 727-4723,Starbucks,LS,TRUE,Open until 04:00,45.349959,-75.75625,1385 Woodroffe Ave,NA,NA,Ottawa,ON,CA,K2G 1V8
+4824-108289,893,2222 Carling Avenue,613-828-7729,Starbucks,CO,TRUE,Open until 08:00,45.36909,-75.772213,2222 Carling Avenue,Unit 1,NA,Ottawa,ON,CA,K2A 1H3
+19795-184746,1005776,330 West Hunt-Ottawa,613 224 7342,Starbucks,CO,TRUE,Open until 09:30,45.339056,-75.712241,330 West Hunt Club Road,NA,NA,Ottawa,ON,CA,K2E 0B7
+16466-157825,87037,1350 Baseline Road,613-226-8606,Starbucks,CO,TRUE,Open until 10:00,45.362723,-75.736507,1350 Baseline Road,NA,Loblaws Centre,Ottawa,ON,CA,K2C 0A9
+47082-255356,1015395,495 Chemin Vanier,8193250089,Starbucks,CO,TRUE,Open until 08:00,45.41608,-75.806486,495 Vanier Road,NA,NA,Gatineau,QC,CA,J9J 3J1
+4484-88341,1338,421 Richmond Road - Reserve Store,613-715-9796,Starbucks,CO,TRUE,Open until 10:00,45.390503,-75.757389,421 Richmond Road,101,Westboro Village Centre,Ottawa,ON,CA,K2A 4H1
+51923-280145,1023837,690 Hunt Club Road,6132197587,Starbucks,CO,TRUE,Open until 09:00,45.34283,-75.669748,690 Hunt Club Road,NA,NA,Ottawa,ON,CA,K1V 1C3
+21590-206647,1007101,1620 Scott Street,613-798-0127,Starbucks,CO,TRUE,Open until 06:00,45.403884,-75.733759,1620 Scott Street,30,NA,Ottawa,ON,CA,K1Y 4S7
+63467-297773,1029386,CARLETON UNIVERSITY - Unknown,NA,Starbucks,LS,TRUE,Open until 04:00,45.387159,-75.697147,1125 Colonel By Drive,NA,NA,Ottawa,ON,CA,K1S 5B6
+4277-915,993,2210 Bank Street,6137333227,Starbucks,CO,TRUE,Open until 08:00,45.356731,-75.655827,2210 Bank Street,NA,South Keys Shopping Center,Ottawa,ON,CA,K1V 1G6
+4768-104194,777,Preston & Aberdeen,613-236-1743,Starbucks,CO,TRUE,Open until 08:30,45.401827,-75.709978,349 Preston Street,Unit 1D-20A,Preston Square,Ottawa,ON,CA,K1S 5N4
+57245-289418,1028467,1914 Bank Street,6134628380,Starbucks,CO,TRUE,Open until 09:00,45.368235,-75.662605,1914 Bank Street,2,NA,Ottawa,ON,CA,K1V 7Z8
+4283-937,1376,787 Bank Street,(613) 232-4166,Starbucks,CO,TRUE,Open until 09:00,45.403195,-75.688254,787 Bank Street,NA,NA,Ottawa,ON,CA,K1S 3V5
+58574-292526,1027740,4791 Bank Street,6132912447,Starbucks,CO,TRUE,Open until 10:00,45.319253,-75.592459,4791 Bank Street,NA,NA,Ottawa,ON,CA,K1T 3W7
+49358-263504,1017357,Le WE,8197700888,Starbucks,LS,NA,,45.426168,-75.719483,119 Wellington Rd,NA,NA,Gatineau,QC,CA,J8X 2J1
+17218-142624,89029,455 Bank Street Unit 3,613-238-7953,Starbucks,CO,TRUE,Open until 09:00,45.411502,-75.693105,455 Bank Street Unit 3,NA,NA,Ottawa,ON,CA,K2P 1Z1
+4944-128924,514,Kent Street & Albert Street,613-232-9089,Starbucks,CO,TRUE,Open until 09:30,45.418832,-75.702563,340 Albert Street,Unit No G-06,NA,Ottawa,ON,CA,K1R 7X7
+75626-76440,1383,Ottawa Marriott,613-238-1122,Starbucks,LS,FALSE,Closed,45.419994,-75.7034,100 Kent St,NA,NA,Ottawa,ON,CA,K1P 5R7
+4268-289944,1023442,99 Bank St,NA,Starbucks,CO,TRUE,Open until 06:00,45.420397,-75.699807,99 Bank Street,G-009,Sun Life Centre,Ottawa,ON,CA,K1P 1E4
+4516-93218,1337,81 Metcalfe Street,613-569-6060,Starbucks,CO,TRUE,Open until 07:00,45.421189,-75.695709,81 Metcalfe St,NA,NA,Ottawa,ON,CA,K1P 6K7
+4238-273445,1019657,216 Elgin Street,6132329525,Starbucks,CO,TRUE,Open until 08:30,45.41901,-75.691568,216 Elgin Street,NA,NA,Ottawa,ON,CA,K2P 1L7
+75220-89640,1341,Compass @ Lord Elgin,6132386617,Starbucks,LS,NA,,45.421381,-75.693655,100 Elgin St,NA,NA,Ottawa,ON,CA,K1P 5K8
+4960-130968,779,50 Rideau Centre,613-230-0330,Starbucks,CO,TRUE,Open until 07:00,45.425428,-75.692943,50 Rideau Centre,Unit #246,NA,Ottawa,ON,CA,K1N 9J7
+58410-292563,1025736,275 Laurier Ave East,3439987104,Starbucks,CO,TRUE,Open until 09:00,45.426702,-75.680098,275 Laurier Ave East,Unit C,NA,Ottawa,ON,CA,K1N 6P7
+53822-286044,1025085,Stewart and Parkdale,6132461281,Starbucks,CO,TRUE,Open until 10:00,44.601928,-75.703309,2511 Parkdale Ave,Unit C,NA,Brockville,ON,CA,K6V 3H2
+4897-109785,470,1981 Parkdale Ave. Unit D,(613) 342-8368,Starbucks,CO,TRUE,Open until 10:00,44.614622,-75.683841,1981 Parkdale Ave. Unit D,NA,NA,Brockville,ON,CA,K6V 0B4
+4957-130970,671,"100 Trainyards Drive, Unit 14A",613-241-8858,Starbucks,CO,TRUE,Open until 09:00,45.413151,-75.646894,"100 Trainyards Drive,  Unit 14A",NA,NA,Ottawa,ON,CA,K1G 3S2
+61683-292770,1027830,Loblaws Ottawa McArthur  Ave #1014,NA,Starbucks,LS,TRUE,Open until 08:00,45.430276,-75.664935,100 McArthur Ave,NA,NA,Ottawa,ON,CA,K1L 6P9
+18568-178784,1006579,Hwy 50 & St-Louis,819-561-1271,Starbucks,CO,TRUE,Open until 06:30,45.464607,-75.717638,71 de la Gappe,Unit 2,NA,Gatineau,QC,CA,J8T 0B5
+48809-210526,1017350,Beechwood & Mackay,3439975818,Starbucks,CO,TRUE,Open until 07:30,45.4393,-75.677235,409 MacKay Street,NA,NA,Ottawa,ON,CA,K1M 2C5
+4517-93451,1269,1910 St. Laurent Blvd,613-248-0550,Starbucks,CO,TRUE,Open until 09:00,45.39899,-75.623117,1910 St. Laurent Blvd,Unit A/B,NA,Ottawa,ON,CA,K1G 1A4
+4788-104697,545,380 Coventry Road,613-744-6471,Starbucks,CO,TRUE,Open until 09:00,45.42109,-75.649234,380 Coventry Road,NA,NA,Ottawa,ON,CA,K1K 2C6
+19686-199345,1005696,Les Promenades Gatineau,8192469648,Starbucks,CO,TRUE,Open until 06:00,45.476179,-75.697501,1100 Blvd Maloney O,NA,NA,Gatineau,QC,CA,J8T 6G3
+15726-162824,116294,1200 St. Laurent Blvd.,613-744-7858,Starbucks,CO,TRUE,Open until 09:30,45.42339,-75.636936,1200 St. Laurent Blvd.,541A,St. Laruent Shopping Centre,Ottawa,ON,CA,K1K 3B8
+17650-168364,90330,1459 Ogilvie Road,613-744-3528,Starbucks,CO,TRUE,Open until 10:00,45.432212,-75.617469,1459 Ogilvie Road,Unit #4,NA,Ottawa,ON,CA,K1J 8K6
+20172-201624,1008815,1615 Orleans Blvd,6138414995,Starbucks,CO,FALSE,Closed,45.461361,-75.523809,1615 Orleans Blvd,NA,NA,Ottawa,ON,CA,K1C 7E2
+58077-291992,1025952,Place d'Orleans,6133556827,Starbucks,CO,TRUE,Open until 05:00,45.478182,-75.516631,110 Place d'Orleans Dr,NA,NA,Ottawa,ON,CA,K1C 2L9
+54983-288774,1022564,Indigo 2025 Mer-Bleue Road,6136976891,Starbucks,CO,TRUE,Open until 08:00,45.455602,-75.503844,2025 Mer-Bleue Road,NA,NA,Orleans,ON,CA,K4A 3T9
+4666-100575,487,4240 Innes Road,613-837-1815,Starbucks,CO,TRUE,Open until 09:00,45.457404,-75.497574,4240 Innes Road,NA,NA,Orleans,ON,CA,K4A 5E6
+49671-270244,1020858,3000 Wellington Road,6134102291,Starbucks,CO,TRUE,Open until 09:00,45.030333,-75.634758,3000 Wellington Road,NA,NA,Kemptville,ON,CA,K0G 1J0
+4683-100798,478,3302 Woodroffe Avenue,613-823-9903,Starbucks,CO,TRUE,Open until 10:00,45.275131,-75.718766,3302 Woodroffe Avenue,NA,NA,Ottawa,ON,CA,K2J 4G5
+15908-154985,66437,1181 Greenbank Road,6138430265,Starbucks,CO,TRUE,Open until 10:00,45.274453,-75.748235,1181 Greenbank Road,NA,NA,Ottawa,ON,CA,K2J 4Y6
+51923-280145,1023837,690 Hunt Club Road,6132197587,Starbucks,CO,TRUE,Open until 09:00,45.34283,-75.669748,690 Hunt Club Road,NA,NA,Ottawa,ON,CA,K1V 1C3
+19795-184746,1005776,330 West Hunt-Ottawa,613 224 7342,Starbucks,CO,TRUE,Open until 09:30,45.339056,-75.712241,330 West Hunt Club Road,NA,NA,Ottawa,ON,CA,K2E 0B7
+4922-107288,837,690 Eagleson Road,613-595-1569,Starbucks,CO,TRUE,Open until 10:00,45.286754,-75.867724,690 Eagleson Road,NA,NA,Ottawa,ON,CA,K2M 2G9
+4277-915,993,2210 Bank Street,6137333227,Starbucks,CO,TRUE,Open until 08:00,45.356731,-75.655827,2210 Bank Street,NA,South Keys Shopping Center,Ottawa,ON,CA,K1V 1G6
+4458-84661,1351,1831 Robertson Road,613-726-6565,Starbucks,CO,TRUE,Open until 08:00,45.328247,-75.818912,1831 Robertson Road,NA,Stafford Centre,Nepean,ON,CA,K2H 8X3
+4472-274490,1018080,457 Hazeldean Road,6138363663,Starbucks,CO,TRUE,Open until 10:00,45.300168,-75.885751,457 Hazeldean Road,NA,NA,Kanata,ON,CA,K2L 1V1
+16466-157825,87037,1350 Baseline Road,613-226-8606,Starbucks,CO,TRUE,Open until 10:00,45.362723,-75.736507,1350 Baseline Road,NA,Loblaws Centre,Ottawa,ON,CA,K2C 0A9
+4287-919,1282,2735 Iris Street,(613) 820-0032,Starbucks,CO,TRUE,Open until 09:30,45.349511,-75.787953,2735 Iris Street,NA,NA,Ottawa,ON,CA,K2C 3S4
+15700-162804,68127,100 Bayshore Drive,613-828-6732,Starbucks,CO,TRUE,Open until 07:30,45.347583,-75.806783,100 Bayshore Drive,K30,Bayshore Shopping Centre,Ottawa,ON,CA,K2B 8C1
+4824-108289,893,2222 Carling Avenue,613-828-7729,Starbucks,CO,TRUE,Open until 08:00,45.36909,-75.772213,2222 Carling Avenue,Unit 1,NA,Ottawa,ON,CA,K2A 1H3
+4575-95544,939,500 Terry Fox Drive,613-254-5775,Starbucks,CO,TRUE,Open until 09:30,45.308831,-75.916744,500 Terry Fox Drive,NA,NA,Kanata,ON,CA,K2T 1C3
+52378-278465,1025696,8555 Campeau Drive,3439985876,Starbucks,CO,TRUE,Open until 09:30,45.295791,-75.939319,8555 Campeau Drive,NA,Tanger Outlets Ottawa,Ottawa,ON,CA,K2S 1B9
+4336-1907,1279,400 Earl Grey Drive,613-599-6680,Starbucks,CO,TRUE,Open until 07:00,45.311608,-75.914139,400 Earl Grey Drive,NA,NA,Kanata,ON,CA,K2T 1B9
+4517-93451,1269,1910 St. Laurent Blvd,613-248-0550,Starbucks,CO,TRUE,Open until 09:00,45.39899,-75.623117,1910 St. Laurent Blvd,Unit A/B,NA,Ottawa,ON,CA,K1G 1A4
+4283-937,1376,787 Bank Street,(613) 232-4166,Starbucks,CO,TRUE,Open until 09:00,45.403195,-75.688254,787 Bank Street,NA,NA,Ottawa,ON,CA,K1S 3V5
+4484-88341,1338,421 Richmond Road - Reserve Store,613-715-9796,Starbucks,CO,TRUE,Open until 10:00,45.390503,-75.757389,421 Richmond Road,101,Westboro Village Centre,Ottawa,ON,CA,K2A 4H1
+4768-104194,777,Preston & Aberdeen,613-236-1743,Starbucks,CO,TRUE,Open until 08:30,45.401827,-75.709978,349 Preston Street,Unit 1D-20A,Preston Square,Ottawa,ON,CA,K1S 5N4
+60967-295228,1029113,4055 Carling Ave,3439967164,Starbucks,CO,TRUE,Open until 09:00,45.338501,-75.907865,4055 Carling Ave,1,NA,Kanata,ON,CA,K2K 2A4
+4957-130970,671,"100 Trainyards Drive, Unit 14A",613-241-8858,Starbucks,CO,TRUE,Open until 09:00,45.413151,-75.646894,"100 Trainyards Drive,  Unit 14A",NA,NA,Ottawa,ON,CA,K1G 3S2
+17218-142624,89029,455 Bank Street Unit 3,613-238-7953,Starbucks,CO,TRUE,Open until 09:00,45.411502,-75.693105,455 Bank Street Unit 3,NA,NA,Ottawa,ON,CA,K2P 1Z1
+4904-114726,508,505 McNeely Road,613-253-1760,Starbucks,CO,TRUE,Open until 09:30,45.132047,-76.119243,505 McNeely Road,NA,Carleton Place Colonnade,Carleton Place,ON,CA,K7C 0A8
+4788-104697,545,380 Coventry Road,613-744-6471,Starbucks,CO,TRUE,Open until 09:00,45.42109,-75.649234,380 Coventry Road,NA,NA,Ottawa,ON,CA,K1K 2C6
+15726-162824,116294,1200 St. Laurent Blvd.,613-744-7858,Starbucks,CO,TRUE,Open until 09:30,45.42339,-75.636936,1200 St. Laurent Blvd.,541A,St. Laruent Shopping Centre,Ottawa,ON,CA,K1K 3B8
+4238-273445,1019657,216 Elgin Street,6132329525,Starbucks,CO,TRUE,Open until 08:30,45.41901,-75.691568,216 Elgin Street,NA,NA,Ottawa,ON,CA,K2P 1L7
+4944-128924,514,Kent Street & Albert Street,613-232-9089,Starbucks,CO,TRUE,Open until 09:30,45.418832,-75.702563,340 Albert Street,Unit No G-06,NA,Ottawa,ON,CA,K1R 7X7
+53909-286089,1022248,5055 Innovation Drive,6134625893,Starbucks,CO,TRUE,Open until 09:30,45.34419,-75.930411,5055 Innovation Drive,NA,NA,Kanata,ON,CA,K2K 3K1
+4268-289944,1023442,99 Bank St,NA,Starbucks,CO,TRUE,Open until 06:00,45.420397,-75.699807,99 Bank Street,G-009,Sun Life Centre,Ottawa,ON,CA,K1P 1E4
+4516-93218,1337,81 Metcalfe Street,613-569-6060,Starbucks,CO,TRUE,Open until 07:00,45.421189,-75.695709,81 Metcalfe St,NA,NA,Ottawa,ON,CA,K1P 6K7
+17650-168364,90330,1459 Ogilvie Road,613-744-3528,Starbucks,CO,TRUE,Open until 10:00,45.432212,-75.617469,1459 Ogilvie Road,Unit #4,NA,Ottawa,ON,CA,K1J 8K6
+4960-130968,779,50 Rideau Centre,613-230-0330,Starbucks,CO,TRUE,Open until 07:00,45.425428,-75.692943,50 Rideau Centre,Unit #246,NA,Ottawa,ON,CA,K1N 9J7
+4897-109785,470,1981 Parkdale Ave. Unit D,(613) 342-8368,Starbucks,CO,TRUE,Open until 10:00,44.614622,-75.683841,1981 Parkdale Ave. Unit D,NA,NA,Brockville,ON,CA,K6V 0B4
+48809-210526,1017350,Beechwood & Mackay,3439975818,Starbucks,CO,TRUE,Open until 07:30,45.4393,-75.677235,409 MacKay Street,NA,NA,Ottawa,ON,CA,K1M 2C5
+47082-255356,1015395,495 Chemin Vanier,8193250089,Starbucks,CO,TRUE,Open until 08:00,45.41608,-75.806486,495 Vanier Road,NA,NA,Gatineau,QC,CA,J9J 3J1
+53822-286044,1025085,Stewart and Parkdale,6132461281,Starbucks,CO,TRUE,Open until 10:00,44.601928,-75.703309,2511 Parkdale Ave,Unit C,NA,Brockville,ON,CA,K6V 3H2
+55749-289586,1022056,Metro Orleans #265,NA,Starbucks,LS,TRUE,Open until 07:00,45.461805,-75.484392,4510 Innes Road,NA,NA,Ottawa,ON,CA,K4A4C5
+48602-263887,1014896,1375 Trim Road,3439967891,Starbucks,CO,TRUE,Open until 04:00,45.489687000000004,-75.478144,1375 Trim Road,NA,NA,Ottawa,ON,CA,K4A 3P7
+20172-201624,1008815,1615 Orleans Blvd,6138414995,Starbucks,CO,FALSE,Closed,45.461361,-75.523809,1615 Orleans Blvd,NA,NA,Ottawa,ON,CA,K1C 7E2
+58077-291992,1025952,Place d'Orleans,6133556827,Starbucks,CO,TRUE,Open until 05:00,45.478182,-75.516631,110 Place d'Orleans Dr,NA,NA,Ottawa,ON,CA,K1C 2L9
+54983-288774,1022564,Indigo 2025 Mer-Bleue Road,6136976891,Starbucks,CO,TRUE,Open until 08:00,45.455602,-75.503844,2025 Mer-Bleue Road,NA,NA,Orleans,ON,CA,K4A 3T9
+4666-100575,487,4240 Innes Road,613-837-1815,Starbucks,CO,TRUE,Open until 09:00,45.457404,-75.497574,4240 Innes Road,NA,NA,Orleans,ON,CA,K4A 5E6
+48602-263887,1014896,1375 Trim Road,3439967891,Starbucks,CO,TRUE,Open until 04:00,45.489687000000004,-75.478144,1375 Trim Road,NA,NA,Ottawa,ON,CA,K4A 3P7
+18568-178784,1006579,Hwy 50 & St-Louis,819-561-1271,Starbucks,CO,TRUE,Open until 06:30,45.464607,-75.717638,71 de la Gappe,Unit 2,NA,Gatineau,QC,CA,J8T 0B5
+53827-286045,1027067,9069 County Road 17,3439967834,Starbucks,CO,TRUE,Open until 09:00,45.544157,-75.303921,9069 County Road 17,NA,NA,Rockland,ON,CA,K4K 0B2
+55443-285758,1028800,Casselman Exit 66,6137643112,Starbucks,LS,TRUE,Open until 09:00,45.29956,-75.079287,625 rue Principale,NA,NA,Casselman,ON,CA,K0A 1M0
+29393-253446,1016822,Brookdale & Rosemount Ave Cornwall,6138611235,Starbucks,CO,TRUE,Open until 10:00,45.028234,-74.753047,1238 Brookdale Avenue,NA,NA,Cornwall,ON,CA,K6J 4P6
+53827-286045,1027067,9069 County Road 17,3439967834,Starbucks,CO,TRUE,Open until 09:00,45.544157,-75.303921,9069 County Road 17,NA,NA,Rockland,ON,CA,K4K 0B2
