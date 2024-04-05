@@ -15,4 +15,4 @@ weight = 25
 
 +++
 
-My CV is available in [PDF](cv/Belanger_Christopher_cv_2023-11-24.pdf) form. (Last updated: November 24, 2023)
+My CV is available in [PDF](cv/Belanger_Christopher_cv_2024-04-05) form. (Last updated: April 5, 2024)
